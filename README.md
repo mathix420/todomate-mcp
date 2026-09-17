@@ -2,6 +2,10 @@
 
 A Python MCP server that lists, creates, updates, completes, and deletes TodoMate Firestore todos.
 
+## Original source
+
+This repository is based on [LYJ0304's todomate-mcp, archived on Glama](https://glama.ai/mcp/servers/LYJ0304/todomate-mcp). Credit for the original project goes to LYJ0304. The source snapshot was recovered from Glama after the [upstream GitHub repository](https://github.com/LYJ0304/todomate-mcp) returned HTTP 404, and this repository includes subsequent changes. Recovery details are recorded in [.glama-recovery.json](.glama-recovery.json).
+
 ## Development environment
 
 - Python 3.12 or later and uv

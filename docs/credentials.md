@@ -10,6 +10,14 @@ Copy `.env.example` to `.env` and enter your Firebase API key:
 TODOMATE_FIREBASE_API_KEY=<FIREBASE_WEB_API_KEY>
 ```
 
+Get the key from TodoMate's [public Firebase configuration](https://www.todomate.net/__/firebase/init.json):
+
+```sh
+curl -fsSL https://www.todomate.net/__/firebase/init.json | jq -r '.apiKey'
+```
+
+Copy the printed value into `TODOMATE_FIREBASE_API_KEY`. It identifies the project; your email/password login supplies account authorization.
+
 Then sign in interactively to save your credentials in the operating system's Keyring or Credential Manager:
 
 ```sh

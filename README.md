@@ -20,6 +20,14 @@ uv sync
 
 Source code is in `src/` and tests are in `tests/`. Copy `.env.example` to a local `.env` file and configure its credentials. `.env` is excluded from Git.
 
+Retrieve TodoMate's Firebase Web API key from its [public web configuration](https://www.todomate.net/__/firebase/init.json) (requires `curl` and `jq`):
+
+```sh
+curl -fsSL https://www.todomate.net/__/firebase/init.json | jq -r '.apiKey'
+```
+
+Set `TODOMATE_FIREBASE_API_KEY` in `.env` to the printed value. This key identifies TodoMate's Firebase project; you still need to sign in to your own TodoMate account with `uv run todomate-mcp auth login`.
+
 ## Tests
 
 ```sh

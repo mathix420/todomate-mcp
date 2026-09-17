@@ -65,6 +65,8 @@ jobs:
           status=$(curl --silent --show-error --output /dev/null \
             --write-out '%{http_code}' --max-time 5 "http://127.0.0.1:$port/mcp")
           test "$status" = 401
+          TODOMATE_MCP_ACCESS_TOKEN=ci-smoke-test-token \
+            uv run --locked python scripts/check_mcp.py --url "http://127.0.0.1:$port/mcp"
 
   publish:
     name: Publish to GitHub Container Registry

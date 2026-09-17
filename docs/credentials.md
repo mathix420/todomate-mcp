@@ -16,6 +16,8 @@ Then sign in interactively to save your credentials in the operating system's Ke
 todomate-mcp auth login
 ```
 
+In Docker, the image instead saves credentials to `/data/credentials.json`; mount a persistent volume at `/data`. The file contains the refresh token and UID, has owner-only permissions, and is replaced atomically when the token rotates. Set `TODOMATE_CREDENTIALS_FILE` to select a different path, or leave it unset outside Docker to use the OS keyring. See the [stack setup and login instructions](deployment.md#add-to-the-hermes-and-duplicacy-stack).
+
 ## Restoring a session and updating refresh tokens
 
 The stdio MCP server reads the saved credentials at startup. On the first Todo request, it uses the stored refresh token to restore the Firebase session.

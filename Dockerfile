@@ -20,7 +20,8 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
-    TODOMATE_ENV_FILE=/data/.env
+    TODOMATE_ENV_FILE=/data/.env \
+    TODOMATE_CREDENTIALS_FILE=/data/credentials.json
 
 WORKDIR /app
 

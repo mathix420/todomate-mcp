@@ -1,0 +1,35 @@
+# Merge with your existing stack: docker compose -f stack.yml -f compose.todomate.yaml up -d
+services:
+  hermes:
+    environment:
+      TODOMATE_MCP_ACCESS_TOKEN: ${TODOMATE_MCP_ACCESS_TOKEN:?Set TODOMATE_MCP_ACCESS_TOKEN}
+    depends_on:
+      todomate-mcp:
+        condition: service_healthy
+
+  todomate-mcp:
+    image: ghcr.io/mathix420/todomate-mcp:latest
+    restart: unless-stopped
+    environment:
+      TZ: Europe/Paris
+      TODOMATE_FIREBASE_API_KEY: ${TODOMATE_FIREBASE_API_KEY:?Set TODOMATE_FIREBASE_API_KEY}
+      TODOMATE_MCP_ACCESS_TOKEN: ${TODOMATE_MCP_ACCESS_TOKEN:?Set TODOMATE_MCP_ACCESS_TOKEN}
+      TODOMATE_CREDENTIALS_FILE: /data/credentials.json
+      TODOMATE_MCP_PUBLIC_URL: http://todomate-mcp:8000/mcp
+    volumes:
+      - todomate_data:/data:rw
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  duplicacy:
+    volumes:
+      - todomate_data:/backup/todomate_data:ro
+
+volumes:
+  todomate_data:

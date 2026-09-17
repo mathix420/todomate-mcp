@@ -147,3 +147,30 @@ def test_auth_logout_deletes_credential_and_status_reports_not_logged_in(monkeyp
     server.main()
 
     assert capsys.readouterr().out == "✓ Logged out.\nNot logged in.\n"
+
+
+def test_container_login_and_logout_share_file_credentials(tmp_path, monkeypatch, capsys):
+    path = tmp_path / "credentials.json"
+
+    class Auth:
+        def __init__(self, *_):
+            self.refresh_token = "container-token"
+            self.uid = "container-user"
+
+        async def sign_in(self, *_):
+            pass
+
+    monkeypatch.setattr(server, "FirebaseAuthSession", Auth)
+    monkeypatch.setattr(server, "load_environment", lambda: {
+        "TODOMATE_FIREBASE_API_KEY": "api-key",
+        "TODOMATE_CREDENTIALS_FILE": str(path),
+    })
+    monkeypatch.setattr(builtins, "input", lambda _: "me@example.com")
+    monkeypatch.setattr(server, "getpass", lambda _: "password-secret")
+    monkeypatch.setattr(server.sys, "argv", ["todomate-mcp", "auth", "login"])
+    server.main()
+    assert server._credential_store().load() == Credential("container-token", "container-user")
+    monkeypatch.setattr(server.sys, "argv", ["todomate-mcp", "auth", "logout"])
+    server.main()
+    assert not path.exists()
+    assert "password-secret" not in capsys.readouterr().out

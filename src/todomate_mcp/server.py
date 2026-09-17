@@ -5,13 +5,14 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import date
 from getpass import getpass
+from pathlib import Path
 import sys
 from typing import Any
 
 import httpx
 import uvicorn
 
-from .auth.credentials import Credential, CredentialStore, KeyringCredentialStore
+from .auth.credentials import Credential, CredentialStore, FileCredentialStore, KeyringCredentialStore
 from .firebase_auth import AuthenticationError, FirebaseAuthSession
 from .firestore import FirestoreClient
 from .settings import load_environment, load_firebase_api_key
@@ -78,9 +79,17 @@ class _ConfiguredAdapter:
             self._credential_store.delete()
 
 
+def _credential_store(environment: dict[str, str] | None = None) -> CredentialStore:
+    if environment is None:
+        environment = load_environment()
+    if path := environment.get("TODOMATE_CREDENTIALS_FILE"):
+        return FileCredentialStore(Path(path))
+    return KeyringCredentialStore()
+
+
 def _adapter_from_local_credentials() -> _ConfiguredAdapter | None:
     api_key = load_firebase_api_key()
-    credential_store = KeyringCredentialStore()
+    credential_store = _credential_store()
     credential = credential_store.load()
     if not api_key or credential is None:
         return None
@@ -149,7 +158,7 @@ def main() -> None:
 
     if args.command == "auth":
         api_key = environment.get("TODOMATE_FIREBASE_API_KEY")
-        credential_store = KeyringCredentialStore()
+        credential_store = _credential_store(environment)
         if args.auth_command == "login":
             if not api_key:
                 parser.error("TODOMATE_FIREBASE_API_KEY is required for login")

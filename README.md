@@ -63,3 +63,5 @@ uv run todomate-mcp auth logout
 GitHub Actions tests the project and publishes Docker images to `ghcr.io/<owner>/<repo>` on default-branch pushes (`latest`) and version tags such as `v1.0.0`. Images support AMD64 and ARM64 and use GitHub's built-in token; no registry secrets are required. See [container publishing](docs/deployment.md#publishing-images-with-github-actions) for setup, image visibility, and pull commands.
 
 See the [deployment guide](docs/deployment.md) for HTTPS, secrets, refresh-token persistence, and operating procedures for a remote MCP deployment.
+
+For a Hermes and Duplicacy stack, use the [Compose overlay](compose.todomate.yaml) and [setup instructions](docs/deployment.md#add-to-the-hermes-and-duplicacy-stack). The Docker image persists login credentials in `/data/credentials.json` on a mounted volume.

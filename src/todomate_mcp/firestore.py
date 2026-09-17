@@ -122,6 +122,8 @@ class FirestoreClient:
         if not collection_id or "/" in collection_id:
             raise ValueError("Firestore collection ID must be a single segment")
         clauses = [
+            {"unaryFilter": {"field": {"fieldPath": name}, "op": "IS_NULL"}}
+            if value is None else
             {"fieldFilter": {"field": {"fieldPath": name}, "op": "EQUAL", "value": encode_value(value)}}
             for name, value in filters.items()
         ]

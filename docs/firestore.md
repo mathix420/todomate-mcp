@@ -9,6 +9,37 @@ These research notes were written for the original issue [#3](https://github.com
 
 The review did not use or record real accounts, Todo data, API keys, or ID tokens. User IDs, document IDs, and tokens in the examples are placeholders.
 
+## Live verification update — 2026-09-17
+
+Subsequent testing compared three TodoMate web-app creations with this MCP implementation. All three browser writes used the `TodoItem` collection, a nonempty `goalID`, and the same UTC-midnight date encoding documented below. The MCP's previous optional group argument sent `goalID: null`, which failed with HTTP 403. Supplying a valid group ID with the existing MCP payload succeeded and returned the created todo.
+
+The `Goal` collection uses `userID` for ownership (unlike `TodoItem.writerID`). Goal documents expose `id`, `title`, and a numeric `priority`. The `list_goals` tool queries the connected user's groups and sorts by priority. `create_todo` now requires `goal_id`; see the [MCP usage guide](mcp-usage.md).
+
+The browser initialized `hasPhoto`, `isMemoPublic`, and `likesTotalCount` to null, whereas the reference-based MCP payload initializes them to false/false/zero. The MCP payload was accepted once a valid group ID was supplied, so those differences did not cause the observed failure. These observations apply to the tested account and app version; they do not establish every Firestore Security Rule. No captured account data or request traces are included in this repository.
+
+Additional captured updates established these operations:
+
+| User action | Write |
+| --- | --- |
+| Edit text | Update `content` with a `content` field mask |
+| Change date | Update `date` to UTC-midnight milliseconds with a `date` field mask |
+| Remove date | Update `date` to null with the same field mask |
+| Restore date | Update the null `date` back to UTC-midnight milliseconds |
+| Set private/public memo | Update `memo` and `isMemoPublic` together with both fields in the mask |
+| Delete todo | Delete the `TodoItem` document |
+
+Thus an existing todo's `date` can be null. The MCP supports this state with `list_todos(unscheduled=true)` and `schedule_todo(day=null)`. `set_todo_memo` follows the observed field masks and defaults to private. The browser also writes account UI preferences and notification-read timestamps under `UserData`; these incidental UI changes are not side effects of the MCP's todo operations. Routine and timer write formats were not captured.
+
+Undated queries use the Firestore `unaryFilter` operator `IS_NULL`, combined with the ownership filter, rather than a field equality comparison to a null value. See the [StructuredQuery reference](https://firebase.google.com/docs/firestore/reference/rest/v1/StructuredQuery#unaryfilter).
+
+Later captures also showed:
+
+- Group creation in `Goal`, with a random 20-character ID, owner `userID`, `title`, numeric ARGB `color`, integer `priority`, `createTime`, `finishType: null`, `crewId: null`, and visibility fields. Smaller priority values sort first. Changing status writes only `finishType`; the web application's shipped `GoalFinishType` enum maps `done=0`, `end=1`, `stop=2`, with null for active. Deletion removes the `Goal` document. The MCP refuses deletion while owned todos reference the group.
+- Diary creation in `Diary`, with a random 20-character ID, `writerID`, UTC-midnight `date`, `body`, `emoji`, `createTime`, `isDraft: false`, `likesTotalCount: 0`, and null `sticker`, `color`, `imageURL`, `temperature`, `likes`, and `likesTotalSenderIDs`. Deletion removes the `Diary` document. Updates use masks for the fields being changed.
+- Group and diary sharing is described by all three of `isPublic`, `viewerIDs`, and `isViewerIDsFollowers`. `isPublic: false` alone does **not** mean owner-only. The observed follower sharing populated `viewerIDs` from the owner's `UserData.followerIds`. The MCP's private mode writes `isPublic: false`, `viewerIDs: []`, and `isViewerIDsFollowers: false`; follower/public modes must be requested explicitly.
+
+Default MCP dates use the standard `TZ` environment variable, with UTC as fallback. This changes the choice of calendar date, not the UTC-midnight encoding of that selected date in Firestore.
+
 ## Database and document paths
 
 **Reference code:** The Firebase project ID is `mate-914f3`, and the database ID is `(default)`. Todos are stored in the shared `TodoItem` collection.

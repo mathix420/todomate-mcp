@@ -48,7 +48,11 @@ TODOMATE_MCP_ACCESS_TOKEN="$(openssl rand -hex 32)" uv run todomate-mcp http --h
 
 Set default host and port with `TODOMATE_MCP_HOST` and `TODOMATE_MCP_PORT`. For public deployments, run it behind a reverse proxy that terminates TLS and set `TODOMATE_MCP_PUBLIC_URL` to the external HTTPS URL, such as `https://todos.example.com/mcp`. The current authentication model uses one private Bearer token; requests to `/mcp` without it receive `401`.
 
-The server supports `list_todos`, `get_todo`, `create_todo`, `update_todo`, `complete_todo`, and `delete_todo`. When a date is omitted, it uses the current date in `Asia/Seoul`.
+The server provides 16 tools for groups, todos, scheduling, memos, and diaries. Default dates use the standard `TZ` environment variable (for example, `TZ=Europe/Paris`), falling back to `UTC`. Use `list_todos(unscheduled=true)` for undated todos and `schedule_todo(day=null)` to remove a date. Memos, new groups, and new diaries default to private.
+
+Creating a todo requires a `goal_id` (the TodoMate group). Call `list_goals` to get your groups' IDs and titles, then pass the chosen ID to `create_todo`. TodoMate rejects creation with a null group ID with HTTP 403.
+
+See the [MCP usage guide for LLMs and clients](docs/mcp-usage.md) for group selection, date handling, tool arguments, and safe retries. These instructions are also included in MCP tool discovery.
 
 Set `TODOMATE_FIREBASE_API_KEY` in `.env`. Sign in interactively with the following commands; the refresh token and UID are stored in the OS Keyring/Credential Manager, and the stdio MCP server restores its Firebase session from that credential.
 

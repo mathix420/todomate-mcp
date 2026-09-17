@@ -34,13 +34,37 @@ class _ConfiguredAdapter:
         self._credential_store = credential_store
         self._login_lock = asyncio.Lock()
 
-    async def list_todos(self, day: date) -> Any:
+    async def list_goals(self, include_finished: bool = False) -> Any:
+        return await self._call(lambda: self._adapter.list_goals(include_finished))
+
+    async def create_goal(self, title: str, color: int, visibility: str) -> Any:
+        return await self._call(lambda: self._adapter.create_goal(title, color, visibility))
+
+    async def set_goal_status(self, goal_id: str, status: str) -> Any:
+        return await self._call(lambda: self._adapter.set_goal_status(goal_id, status))
+
+    async def delete_goal(self, goal_id: str) -> None:
+        await self._call(lambda: self._adapter.delete_goal(goal_id))
+
+    async def list_diaries(self, day: date) -> Any:
+        return await self._call(lambda: self._adapter.list_diaries(day))
+
+    async def create_diary(self, body: str, emoji: str, day: date, visibility: str) -> Any:
+        return await self._call(lambda: self._adapter.create_diary(body, emoji, day, visibility))
+
+    async def update_diary(self, diary_id: str, **fields: Any) -> Any:
+        return await self._call(lambda: self._adapter.update_diary(diary_id, **fields))
+
+    async def delete_diary(self, diary_id: str) -> None:
+        await self._call(lambda: self._adapter.delete_diary(diary_id))
+
+    async def list_todos(self, day: date | None) -> Any:
         return await self._call(lambda: self._adapter.list_todos(day))
 
     async def get_todo(self, todo_id: str) -> Any:
         return await self._call(lambda: self._adapter.get_todo(todo_id))
 
-    async def create_todo(self, content: str, day: date, goal_id: str | None) -> Any:
+    async def create_todo(self, content: str, day: date, goal_id: str) -> Any:
         return await self._call(lambda: self._adapter.create_todo(content, day, goal_id))
 
     async def update_todo(self, todo_id: str, **fields: Any) -> Any:
@@ -48,6 +72,12 @@ class _ConfiguredAdapter:
 
     async def complete_todo(self, todo_id: str, completed: bool) -> Any:
         return await self._call(lambda: self._adapter.complete_todo(todo_id, completed))
+
+    async def schedule_todo(self, todo_id: str, day: date | None) -> Any:
+        return await self._call(lambda: self._adapter.schedule_todo(todo_id, day))
+
+    async def set_todo_memo(self, todo_id: str, memo: str | None, public: bool) -> Any:
+        return await self._call(lambda: self._adapter.set_todo_memo(todo_id, memo, public))
 
     async def delete_todo(self, todo_id: str) -> None:
         await self._call(lambda: self._adapter.delete_todo(todo_id))

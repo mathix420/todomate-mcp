@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 import httpx
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
@@ -8,27 +9,69 @@ from todomate_mcp.auth.credentials import Credential
 import todomate_mcp.server as server
 from todomate_mcp.server import _ConfiguredAdapter
 from todomate_mcp.firebase_auth import AuthenticationError
-from todomate_mcp.models import Todo
+from todomate_mcp.models import Goal, Todo
 from todomate_mcp.tools import create_http_app, create_server
+import todomate_mcp.tools as tool_module
 
+
+EXPECTED_TOOLS = {
+    "list_goals", "create_goal", "set_goal_status", "delete_goal",
+    "list_diaries", "create_diary", "update_diary", "delete_diary",
+    "list_todos", "get_todo", "create_todo", "update_todo", "schedule_todo",
+    "set_todo_memo", "complete_todo", "delete_todo",
+}
+
+
+def test_default_dates_follow_tz_at_midnight_boundary(monkeypatch):
+    class FixedDateTime:
+        @staticmethod
+        def now(zone):
+            return datetime(2026, 9, 17, 23, 30, tzinfo=timezone.utc).astimezone(zone)
+
+    class DateAdapter:
+        async def list_todos(self, day):
+            dates.append(day.isoformat())
+            return []
+
+    monkeypatch.setattr(tool_module, "datetime", FixedDateTime)
+    dates = []
+
+    async def run():
+        for tz in ("Europe/Paris", "America/Los_Angeles", ""):
+            monkeypatch.setenv("TZ", tz)
+            async with Client(create_server(DateAdapter())) as client:
+                result = await client.call_tool("list_todos")
+                assert not result.is_error
+                listed = next(t for t in (await client.list_tools()).tools if t.name == "list_todos")
+                assert (tz or "UTC") in listed.description
+    asyncio.run(run())
+    assert dates == ["2026-09-18", "2026-09-17", "2026-09-17"]
 
 def test_server_initializes_and_lists_tools():
     async def run():
         async with Client(create_server(None)) as client:
-            assert {tool.name for tool in (await client.list_tools()).tools} == {"list_todos", "get_todo", "create_todo", "update_todo", "complete_todo", "delete_todo"}
+            tools = (await client.list_tools()).tools
+            assert {tool.name for tool in tools} == EXPECTED_TOOLS
+            create = next(tool for tool in tools if tool.name == "create_todo")
+            assert "goal_id" in create.input_schema["required"]
+            schedule = next(tool for tool in tools if tool.name == "schedule_todo")
+            assert "day" in schedule.input_schema["required"]
     asyncio.run(run())
 
 
 class Adapter:
+    async def list_goals(self, include_finished=False):
+        return [Goal(id="goal", title="Personal")]
+
     async def list_todos(self, day):
-        assert day.isoformat() == "2026-09-05"
+        assert day is None or day.isoformat() == "2026-09-05"
         return [Todo(id="one", content="write", date=day, completed=False, goal_id="goal")]
 
     async def get_todo(self, todo_id):
         return Todo(id=todo_id, content="write", date=__import__("datetime").date(2026, 9, 5), completed=False, goal_id="goal")
 
     async def create_todo(self, content, day, goal_id):
-        assert (content, day.isoformat(), goal_id) == ("new", "2026-09-05", None)
+        assert (content, day.isoformat(), goal_id) == ("new", "2026-09-05", "goal")
         return Todo(id="new", content=content, date=day, completed=False, goal_id=goal_id)
 
     async def update_todo(self, todo_id, *, content=None, day=None, goal_id=None):
@@ -42,14 +85,24 @@ class Adapter:
     async def delete_todo(self, todo_id):
         assert todo_id == "one"
 
+    async def schedule_todo(self, todo_id, day):
+        assert todo_id == "one"
+        return Todo(id=todo_id, content="write", date=day, completed=False, goal_id="goal")
+
+    async def set_todo_memo(self, todo_id, memo, public):
+        assert todo_id == "one"
+        return Todo(id=todo_id, content="write", date=None, completed=False, memo=memo, memo_public=public)
+
 
 def test_todo_tools_list_and_return_normalized_data():
     async def run():
         async with Client(create_server(Adapter(), today=lambda: __import__("datetime").date(2026, 9, 5))) as client:
-            assert {tool.name for tool in (await client.list_tools()).tools} == {"list_todos", "get_todo", "create_todo", "update_todo", "complete_todo", "delete_todo"}
+            assert {tool.name for tool in (await client.list_tools()).tools} == EXPECTED_TOOLS
+            goals = await client.call_tool("list_goals")
+            assert json.loads(goals.content[0].text) == {"goals": [{"id": "goal", "title": "Personal", "status": "active", "visibility": "private", "color": None}]}
             listed = await client.call_tool("list_todos")
             fetched = await client.call_tool("get_todo", {"todo_id": "one"})
-            created = await client.call_tool("create_todo", {"content": "new"})
+            created = await client.call_tool("create_todo", {"content": "new", "goal_id": "goal"})
             updated = await client.call_tool("update_todo", {"todo_id": "one", "content": "changed"})
             completed = await client.call_tool("complete_todo", {"todo_id": "one", "completed": False})
             deleted = await client.call_tool("delete_todo", {"todo_id": "one"})
@@ -62,15 +115,32 @@ def test_todo_tools_list_and_return_normalized_data():
     asyncio.run(run())
 
 
+def test_unscheduled_and_memo_tools_preserve_explicit_null_and_private_default():
+    async def run():
+        async with Client(create_server(Adapter())) as client:
+            unscheduled = await client.call_tool("list_todos", {"unscheduled": True})
+            assert json.loads(unscheduled.content[0].text)["todos"][0]["date"] is None
+            moved = await client.call_tool("schedule_todo", {"todo_id": "one", "day": None})
+            assert json.loads(moved.content[0].text)["date"] is None
+            note = await client.call_tool("set_todo_memo", {"todo_id": "one", "memo": "private"})
+            assert json.loads(note.content[0].text)["memo_public"] is False
+    asyncio.run(run())
+
+
 def test_mcp_rejects_invalid_tool_inputs():
     async def run():
         async with Client(create_server(Adapter(), today=lambda: __import__("datetime").date(2026, 9, 5))) as client:
             for name, arguments in [
                 ("get_todo", {"todo_id": ""}),
-                ("create_todo", {"content": ""}),
+                ("create_todo", {"content": "", "goal_id": "goal"}),
+                ("create_todo", {"content": "valid"}),
+                ("create_todo", {"content": "valid", "goal_id": None}),
                 ("create_todo", {"content": "valid", "goal_id": ""}),
                 ("update_todo", {"todo_id": "one"}),
                 ("delete_todo", {"todo_id": ""}),
+                ("schedule_todo", {"todo_id": "one"}),
+                ("set_todo_memo", {"todo_id": "one"}),
+                ("list_todos", {"day": "2026-09-17", "unscheduled": True}),
             ]:
                 assert (await client.call_tool(name, arguments)).is_error is True
     asyncio.run(run())
@@ -97,14 +167,7 @@ def test_streamable_http_requires_a_bearer_token_and_lists_tools():
                 headers={"Authorization": "Bearer secret"},
             ) as http_client:
                 async with Client(streamable_http_client("http://testserver/mcp", http_client=http_client)) as client:
-                    assert {tool.name for tool in (await client.list_tools()).tools} == {
-                        "list_todos",
-                        "get_todo",
-                        "create_todo",
-                        "update_todo",
-                        "complete_todo",
-                        "delete_todo",
-                    }
+                    assert {tool.name for tool in (await client.list_tools()).tools} == EXPECTED_TOOLS
 
     asyncio.run(run())
 

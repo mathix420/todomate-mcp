@@ -73,3 +73,17 @@ def test_errors_are_classified_and_document_paths_are_validated():
             with pytest.raises(ValueError):
                 await firestore.get_document("TodoItem")
     asyncio.run(run())
+
+
+def test_null_query_uses_is_null_instead_of_equality():
+    async def run():
+        def handle(request):
+            filters = json.loads(request.content)["structuredQuery"]["where"]["compositeFilter"]["filters"]
+            assert filters == [
+                {"fieldFilter": {"field": {"fieldPath": "writerID"}, "op": "EQUAL", "value": {"stringValue": "user"}}},
+                {"unaryFilter": {"field": {"fieldPath": "date"}, "op": "IS_NULL"}},
+            ]
+            return httpx.Response(200, json=[])
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+            assert await FirestoreClient(Auth(), http).query_equal("TodoItem", {"writerID": "user", "date": None}) == []
+    asyncio.run(run())

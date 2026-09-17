@@ -7,10 +7,14 @@ from typing import Any
 
 from .firebase_auth import FirebaseAuthSession
 from .firestore import FirestoreClient, FirestoreError, JsonValue
-from .models import Todo, todo_from_document
+from .models import Diary, Goal, Todo, diary_from_document, goal_from_document, todo_from_document
 
 
-class TodoNotFoundError(LookupError):
+class RecordNotFoundError(LookupError):
+    pass
+
+
+class TodoNotFoundError(RecordNotFoundError):
     pass
 
 
@@ -19,19 +23,100 @@ class TodoMateAdapter:
         self._auth = auth
         self._firestore = firestore
 
-    async def list_todos(self, day: date) -> list[Todo]:
+    async def list_goals(self, include_finished: bool = False) -> list[Goal]:
+        goals = await self._firestore.query_equal("Goal", {"userID": self._auth.uid})
+        return [
+            goal_from_document(goal)
+            for goal in sorted(goals, key=lambda goal: _number(goal.get("priority")))
+            if include_finished or goal.get("finishType") is None
+        ]
+
+    async def _visibility_fields(self, visibility: str) -> dict[str, JsonValue]:
+        if visibility not in {"private", "followers", "public"}:
+            raise ValueError("Visibility must be private, followers, or public")
+        viewers = []
+        if visibility == "followers":
+            user = await self._firestore.get_document(f"UserData/{self._auth.uid}")
+            viewers = user.get("followerIds") or []
+            if not isinstance(viewers, list) or not all(isinstance(value, str) for value in viewers):
+                raise ValueError("Account follower IDs are invalid")
+        return {"isPublic": visibility == "public", "viewerIDs": viewers, "isViewerIDsFollowers": visibility == "followers"}
+
+    async def create_goal(self, title: str, color: int = 4294929858, visibility: str = "private") -> Goal:
+        title = _required(title, "title")
+        if isinstance(color, bool) or not isinstance(color, int) or not 0 <= color <= 0xFFFFFFFF:
+            raise ValueError("Goal color must be an unsigned ARGB integer")
+        goals = await self._firestore.query_equal("Goal", {"userID": self._auth.uid})
+        goal_id = _random_id()
+        fields = {
+            "id": goal_id, "userID": self._auth.uid, "title": title, "color": color,
+            "createTime": _now_millis(), "priority": int(min((_number(g.get("priority")) for g in goals), default=0)) - 1,
+            "finishType": None, "crewId": None, **(await self._visibility_fields(visibility)),
+        }
+        return goal_from_document(await self._firestore.upsert_document(f"Goal/{goal_id}", fields))
+
+    async def set_goal_status(self, goal_id: str, status: str) -> Goal:
+        statuses = {"active": None, "done": 0, "ended": 1, "stopped": 2}
+        if status not in statuses:
+            raise ValueError("Unknown goal status")
+        await self._owned_record("Goal", goal_id, "userID")
+        return goal_from_document(await self._firestore.upsert_document(
+            f"Goal/{goal_id}", {"finishType": statuses[status]}, update_mask=["finishType"]
+        ))
+
+    async def delete_goal(self, goal_id: str) -> None:
+        await self._owned_record("Goal", goal_id, "userID")
+        todos = await self._firestore.query_equal("TodoItem", {"writerID": self._auth.uid, "goalID": goal_id})
+        if todos:
+            raise ValueError("Group contains todos; move or delete them explicitly before deleting the group")
+        await self._firestore.delete_document(f"Goal/{goal_id}")
+
+    async def list_diaries(self, day: date) -> list[Diary]:
+        documents = await self._firestore.query_equal("Diary", {"writerID": self._auth.uid, "date": _day_millis(day)})
+        return [diary_from_document(document) for document in documents]
+
+    async def create_diary(self, body: str, emoji: str, day: date, visibility: str = "private") -> Diary:
+        body, emoji = _required(body, "body"), _required(emoji, "emoji")
+        if await self.list_diaries(day):
+            raise ValueError("A diary already exists for this date; use update_diary")
+        diary_id = _random_id()
+        fields = {
+            "id": diary_id, "writerID": self._auth.uid, "date": _day_millis(day), "body": body, "emoji": emoji,
+            "createTime": _now_millis(), "sticker": None, "color": None, "imageURL": None, "temperature": None,
+            "likes": None, "likesTotalCount": 0, "likesTotalSenderIDs": None, "isDraft": False,
+            **(await self._visibility_fields(visibility)),
+        }
+        return diary_from_document(await self._firestore.upsert_document(f"Diary/{diary_id}", fields))
+
+    async def update_diary(self, diary_id: str, *, body: str | None = None, emoji: str | None = None, visibility: str | None = None) -> Diary:
+        await self._owned_record("Diary", diary_id, "writerID")
+        fields = {}
+        if body is not None:
+            fields["body"] = _required(body, "body")
+        if emoji is not None:
+            fields["emoji"] = _required(emoji, "emoji")
+        if visibility is not None:
+            fields.update(await self._visibility_fields(visibility))
+        if not fields:
+            raise ValueError("At least one diary field is required")
+        return diary_from_document(await self._firestore.upsert_document(f"Diary/{diary_id}", fields, update_mask=list(fields)))
+
+    async def delete_diary(self, diary_id: str) -> None:
+        await self._owned_record("Diary", diary_id, "writerID")
+        await self._firestore.delete_document(f"Diary/{diary_id}")
+
+    async def list_todos(self, day: date | None) -> list[Todo]:
         todos = await self._firestore.query_equal(
-            "TodoItem", {"writerID": self._auth.uid, "date": _day_millis(day)}
+            "TodoItem", {"writerID": self._auth.uid, "date": _day_millis(day) if day is not None else None}
         )
         return [todo_from_document(todo) for todo in sorted(todos, key=lambda todo: _number(todo.get("createTime")))]
 
     async def get_todo(self, todo_id: str) -> Todo:
         return todo_from_document(await self._owned(todo_id), fallback_id=todo_id)
 
-    async def create_todo(self, content: str, day: date, goal_id: str | None = None) -> Todo:
+    async def create_todo(self, content: str, day: date, goal_id: str) -> Todo:
         content = _required(content, "content")
-        if goal_id is not None:
-            goal_id = _required(goal_id, "goal_id")
+        goal_id = _required(goal_id, "goal_id")
         uid, now = self._auth.uid, _now_millis()
         todo_id = f"{uid}{''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20))}"
         return todo_from_document(await self._firestore.upsert_document(
@@ -76,6 +161,19 @@ class TodoMateAdapter:
         document = await self._firestore.upsert_document(f"TodoItem/{todo_id}", fields, update_mask=list(fields))
         return todo_from_document(document, fallback_id=todo_id)
 
+    async def schedule_todo(self, todo_id: str, day: date | None) -> Todo:
+        await self._owned(todo_id)
+        document = await self._firestore.upsert_document(
+            f"TodoItem/{todo_id}", {"date": _day_millis(day) if day is not None else None}, update_mask=["date"]
+        )
+        return todo_from_document(document, fallback_id=todo_id)
+
+    async def set_todo_memo(self, todo_id: str, memo: str | None, public: bool = False) -> Todo:
+        await self._owned(todo_id)
+        fields = {"memo": memo, "isMemoPublic": public if memo is not None else False}
+        document = await self._firestore.upsert_document(f"TodoItem/{todo_id}", fields, update_mask=list(fields))
+        return todo_from_document(document, fallback_id=todo_id)
+
     async def complete_todo(self, todo_id: str, completed: bool = True) -> Todo:
         await self._owned(todo_id)
         fields: dict[str, JsonValue] = {"isDone": completed}
@@ -89,17 +187,27 @@ class TodoMateAdapter:
         await self._firestore.delete_document(f"TodoItem/{todo_id}")
 
     async def _owned(self, todo_id: str) -> dict[str, JsonValue]:
-        if not todo_id or "/" in todo_id:
-            raise ValueError("Todo ID is required")
         try:
-            todo = await self._firestore.get_document(f"TodoItem/{todo_id}")
+            return await self._owned_record("TodoItem", todo_id, "writerID")
+        except RecordNotFoundError:
+            raise TodoNotFoundError(todo_id) from None
+
+    async def _owned_record(self, collection: str, record_id: str, owner_field: str) -> dict[str, JsonValue]:
+        if not record_id or "/" in record_id:
+            raise ValueError("A valid document ID is required")
+        try:
+            document = await self._firestore.get_document(f"{collection}/{record_id}")
         except FirestoreError as error:
             if error.status_code == 404:
-                raise TodoNotFoundError(todo_id) from None
+                raise RecordNotFoundError(record_id) from None
             raise
-        if todo.get("writerID") != self._auth.uid:
-            raise TodoNotFoundError(todo_id)
-        return todo
+        if document.get(owner_field) != self._auth.uid:
+            raise RecordNotFoundError(record_id)
+        return document
+
+
+def _random_id() -> str:
+    return ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(20))
 
 
 def _day_millis(day: date) -> int:

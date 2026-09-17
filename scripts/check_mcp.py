@@ -20,13 +20,16 @@ async def check(url: str, token: str, require_credentials: bool) -> None:
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http:
         async with Client(streamable_http_client(url, http_client=http)) as client:
             names = {tool.name for tool in (await client.list_tools()).tools}
-            assert names == {"list_todos", "get_todo", "create_todo", "update_todo", "complete_todo", "delete_todo"}
-            print("PASS: MCP initialization and discovery of all six tools")
+            assert names == {'list_goals', 'create_goal', 'set_goal_status', 'delete_goal', 'list_diaries', 'create_diary', 'update_diary', 'delete_diary', 'list_todos', 'get_todo', 'create_todo', 'update_todo', 'schedule_todo', 'set_todo_memo', 'complete_todo', 'delete_todo'}
+            print("PASS: MCP initialization and discovery of all 16 tools")
             if require_credentials:
+                goals = await client.call_tool("list_goals")
+                if goals.is_error:
+                    raise RuntimeError("list_goals failed; check TodoMate login and server logs")
                 result = await client.call_tool("list_todos")
                 if result.is_error:
                     raise RuntimeError("list_todos failed; check TodoMate login and server logs")
-                print("PASS: authenticated list_todos call (todo contents not printed)")
+                print("PASS: authenticated list_goals and list_todos calls (contents not printed)")
 
 
 if __name__ == "__main__":

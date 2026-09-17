@@ -17,10 +17,16 @@ class Firestore:
             "TodoItem/one": {"id": "one", "writerID": "user", "content": "first", "date": 1788566400000, "isDone": False, "goalID": "goal", "createTime": 2},
             "TodoItem/two": {"id": "two", "writerID": "user", "content": "second", "date": 1788566400000, "isDone": False, "goalID": "goal", "createTime": 1},
             "TodoItem/other": {"id": "other", "writerID": "other"},
+            "Goal/goal": {"id": "goal", "userID": "user", "title": "Personal", "priority": 1},
+            "Goal/work": {"id": "work", "userID": "user", "title": "Work", "priority": 0},
+            "Goal/other": {"id": "other", "userID": "other", "title": "Private", "priority": 0},
         }
         self.writes = []
 
     async def query_equal(self, collection, filters):
+        if collection == "Goal":
+            assert filters == {"userID": "user"}
+            return [doc for path, doc in self.documents.items() if path.startswith("Goal/") and doc["userID"] == filters["userID"]]
         assert collection == "TodoItem"
         assert filters["writerID"] == "user"
         return [self.documents["TodoItem/one"], self.documents["TodoItem/two"]]
@@ -56,4 +62,67 @@ def test_todo_crud_maps_fields_validates_ownership_and_sorts_list():
             await adapter.get_todo("other")
         with pytest.raises(TodoNotFoundError):
             await adapter.get_todo("missing")
+    asyncio.run(run())
+
+
+def test_list_goals_uses_goal_ownership_field_and_display_order():
+    async def run():
+        adapter = TodoMateAdapter(Auth(), Firestore())
+        goals = await adapter.list_goals()
+        assert [(goal.id, goal.title) for goal in goals] == [("work", "Work"), ("goal", "Personal")]
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("goal_id", [None, "", "   "])
+def test_create_rejects_missing_group_before_firestore_write(goal_id):
+    async def run():
+        firestore = Firestore()
+        adapter = TodoMateAdapter(Auth(), firestore)
+        with pytest.raises(ValueError, match="goal_id is required"):
+            await adapter.create_todo("Test todo", date(2026, 9, 17), goal_id)
+        assert firestore.writes == []
+    asyncio.run(run())
+
+
+def test_schedule_and_unschedule_only_change_the_date():
+    async def run():
+        firestore = Firestore()
+        adapter = TodoMateAdapter(Auth(), firestore)
+        undated = await adapter.schedule_todo("one", None)
+        assert undated.date is None
+        assert firestore.writes[-1] == ("TodoItem/one", {"date": None}, ["date"])
+        scheduled = await adapter.schedule_todo("one", date(2026, 9, 5))
+        assert scheduled.date == date(2026, 9, 5)
+        assert firestore.writes[-1] == ("TodoItem/one", {"date": 1788566400000}, ["date"])
+        with pytest.raises(TodoNotFoundError):
+            await adapter.schedule_todo("other", None)
+    asyncio.run(run())
+
+
+def test_unscheduled_query_keeps_ownership_filter():
+    class UndatedFirestore:
+        async def query_equal(self, collection, filters):
+            assert collection == "TodoItem"
+            assert filters == {"writerID": "user", "date": None}
+            return [{"id": "later", "content": "later", "date": None, "isDone": False}]
+
+    async def run():
+        todos = await TodoMateAdapter(Auth(), UndatedFirestore()).list_todos(None)
+        assert len(todos) == 1 and todos[0].date is None
+    asyncio.run(run())
+
+
+def test_memo_updates_include_visibility_and_enforce_ownership():
+    async def run():
+        firestore = Firestore()
+        adapter = TodoMateAdapter(Auth(), firestore)
+        private = await adapter.set_todo_memo("one", "private note")
+        assert private.memo == "private note" and private.memo_public is False
+        assert firestore.writes[-1] == ("TodoItem/one", {"memo": "private note", "isMemoPublic": False}, ["memo", "isMemoPublic"])
+        public = await adapter.set_todo_memo("one", "public note", True)
+        assert public.memo_public is True
+        cleared = await adapter.set_todo_memo("one", None, True)
+        assert cleared.memo is None and cleared.memo_public is False
+        with pytest.raises(TodoNotFoundError):
+            await adapter.set_todo_memo("other", "not mine")
     asyncio.run(run())

@@ -18,7 +18,7 @@ EXPECTED_TOOLS = {
     "list_goals", "create_goal", "set_goal_status", "delete_goal",
     "list_diaries", "create_diary", "update_diary", "delete_diary",
     "list_todos", "get_todo", "create_todo", "update_todo", "schedule_todo",
-    "set_todo_memo", "complete_todo", "delete_todo",
+    "set_todo_memo", "set_todo_reminder", "complete_todo", "delete_todo",
 }
 
 
@@ -56,6 +56,9 @@ def test_server_initializes_and_lists_tools():
             assert "goal_id" in create.input_schema["required"]
             schedule = next(tool for tool in tools if tool.name == "schedule_todo")
             assert "day" in schedule.input_schema["required"]
+            reminder = next(tool for tool in tools if tool.name == "set_todo_reminder")
+            assert set(reminder.input_schema["required"]) == {"todo_id", "remind_at"}
+            assert {part["type"] for part in reminder.input_schema["properties"]["remind_at"]["anyOf"]} == {"string", "null"}
     asyncio.run(run())
 
 
@@ -92,6 +95,11 @@ class Adapter:
     async def set_todo_memo(self, todo_id, memo, public):
         assert todo_id == "one"
         return Todo(id=todo_id, content="write", date=None, completed=False, memo=memo, memo_public=public)
+
+    async def set_todo_reminder(self, todo_id, remind_at):
+        assert todo_id == "one"
+        assert remind_at is None or remind_at == datetime(2026, 9, 18, 7, tzinfo=timezone.utc)
+        return Todo(id=todo_id, content="write", date=None, completed=False, remind_at=remind_at.astimezone(timezone.utc) if remind_at else None)
 
 
 def test_todo_tools_list_and_return_normalized_data():
@@ -139,10 +147,43 @@ def test_mcp_rejects_invalid_tool_inputs():
                 ("update_todo", {"todo_id": "one"}),
                 ("delete_todo", {"todo_id": ""}),
                 ("schedule_todo", {"todo_id": "one"}),
+                ("set_todo_reminder", {"todo_id": "one"}),
+                ("set_todo_reminder", {"todo_id": "", "remind_at": None}),
+                ("set_todo_reminder", {"todo_id": "one", "remind_at": "2026-09-18T09:00:00"}),
+                ("set_todo_reminder", {"todo_id": "one", "remind_at": "2026-09-18"}),
+                ("set_todo_reminder", {"todo_id": "one", "remind_at": "invalid"}),
                 ("set_todo_memo", {"todo_id": "one"}),
                 ("list_todos", {"day": "2026-09-17", "unscheduled": True}),
             ]:
                 assert (await client.call_tool(name, arguments)).is_error is True
+    asyncio.run(run())
+
+
+def test_reminder_tool_through_configured_adapter_authenticates_and_clears():
+    async def run():
+        calls = []
+
+        class Auth:
+            uid = "user"
+            refresh_token = "rotated"
+
+        class Store:
+            def save(self, credential):
+                assert credential == Credential("rotated", "user")
+                calls.append("save")
+
+        async def authenticate():
+            calls.append("authenticate")
+
+        adapter = _ConfiguredAdapter(Auth(), Adapter(), authenticate, Store())
+        async with Client(create_server(adapter)) as client:
+            result = await client.call_tool("set_todo_reminder", {"todo_id": "one", "remind_at": "2026-09-18T09:00:00+02:00"})
+            assert not result.is_error
+            assert json.loads(result.content[0].text)["remind_at"] == "2026-09-18T07:00:00Z"
+            cleared = await client.call_tool("set_todo_reminder", {"todo_id": "one", "remind_at": None})
+            assert not cleared.is_error
+            assert json.loads(cleared.content[0].text)["remind_at"] is None
+        assert calls == ["authenticate", "save", "save", "save"]
     asyncio.run(run())
 
 

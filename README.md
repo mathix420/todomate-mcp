@@ -56,7 +56,7 @@ TODOMATE_MCP_ACCESS_TOKEN="$(openssl rand -hex 32)" uv run todomate-mcp http --h
 
 Set default host and port with `TODOMATE_MCP_HOST` and `TODOMATE_MCP_PORT`. For public deployments, run it behind a reverse proxy that terminates TLS and set `TODOMATE_MCP_PUBLIC_URL` to the external HTTPS URL, such as `https://todos.example.com/mcp`. The current authentication model uses one private Bearer token; requests to `/mcp` without it receive `401`.
 
-The server provides 16 tools for groups, todos, scheduling, memos, and diaries. Default dates use the standard `TZ` environment variable (for example, `TZ=Europe/Paris`), falling back to `UTC`. Use `list_todos(unscheduled=true)` for undated todos and `schedule_todo(day=null)` to remove a date. Memos, new groups, and new diaries default to private.
+The server provides 17 tools for groups, todos, scheduling, reminders, memos, and diaries. Default dates use the standard `TZ` environment variable (for example, `TZ=Europe/Paris`), falling back to `UTC`. Use `list_todos(unscheduled=true)` for undated todos and `schedule_todo(day=null)` to remove a date. Set a native alarm with `set_todo_reminder(todo_id, remind_at="2026-09-18T09:00:00+02:00")`, or clear it with `remind_at=null`; todo results include `remind_at` in UTC. Memos, new groups, and new diaries default to private.
 
 Creating a todo requires a `goal_id` (the TodoMate group). Call `list_goals` to get your groups' IDs and titles, then pass the chosen ID to `create_todo`. TodoMate rejects creation with a null group ID with HTTP 403.
 

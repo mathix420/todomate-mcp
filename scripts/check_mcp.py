@@ -19,9 +19,13 @@ async def check(url: str, token: str, require_credentials: bool) -> None:
 
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http:
         async with Client(streamable_http_client(url, http_client=http)) as client:
-            names = {tool.name for tool in (await client.list_tools()).tools}
-            assert names == {'list_goals', 'create_goal', 'set_goal_status', 'delete_goal', 'list_diaries', 'create_diary', 'update_diary', 'delete_diary', 'list_todos', 'get_todo', 'create_todo', 'update_todo', 'schedule_todo', 'set_todo_memo', 'complete_todo', 'delete_todo'}
-            print("PASS: MCP initialization and discovery of all 16 tools")
+            tools = (await client.list_tools()).tools
+            names = {tool.name for tool in tools}
+            assert names == {'list_goals', 'create_goal', 'set_goal_status', 'delete_goal', 'list_diaries', 'create_diary', 'update_diary', 'delete_diary', 'list_todos', 'get_todo', 'create_todo', 'update_todo', 'schedule_todo', 'set_todo_memo', 'set_todo_reminder', 'complete_todo', 'delete_todo'}
+            reminder = next(tool for tool in tools if tool.name == "set_todo_reminder")
+            assert set(reminder.input_schema["required"]) == {"todo_id", "remind_at"}
+            assert {part["type"] for part in reminder.input_schema["properties"]["remind_at"]["anyOf"]} == {"string", "null"}
+            print("PASS: MCP initialization and discovery of all 17 tools, including reminder schema")
             if require_credentials:
                 goals = await client.call_tool("list_goals")
                 if goals.is_error:

@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import date, datetime
 from getpass import getpass
 from pathlib import Path
 import sys
@@ -78,6 +78,9 @@ class _ConfiguredAdapter:
 
     async def set_todo_memo(self, todo_id: str, memo: str | None, public: bool) -> Any:
         return await self._call(lambda: self._adapter.set_todo_memo(todo_id, memo, public))
+
+    async def set_todo_reminder(self, todo_id: str, remind_at: datetime | None) -> Any:
+        return await self._call(lambda: self._adapter.set_todo_reminder(todo_id, remind_at))
 
     async def delete_todo(self, todo_id: str) -> None:
         await self._call(lambda: self._adapter.delete_todo(todo_id))

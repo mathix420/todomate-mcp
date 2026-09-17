@@ -40,6 +40,12 @@ Later captures also showed:
 
 Default MCP dates use the standard `TZ` environment variable, with UTC as fallback. This changes the choice of calendar date, not the UTC-midnight encoding of that selected date in Firestore.
 
+## Native reminder field — 2026-09-17
+
+Read-only inspection of the [shipped TodoMate web application](https://www.todomate.net/main.dart.js) confirmed that the alarm picker updates `TodoItem.remindAt` with integer Unix milliseconds, and clearing an alarm writes null. The app converts this field through its milliseconds-since-epoch date constructor. Its alarm picker combines the todo's date with the selected local time. Its date-moving UI also adjusts an existing alarm to the new date, preserving local hours and minutes.
+
+The MCP exposes `set_todo_reminder(todo_id, remind_at)`, requiring an explicit timezone offset on non-null timestamps and encoding the instant as Unix milliseconds (sub-millisecond precision is discarded). It checks ownership and patches only `remindAt`. Todo results decode the field as `remind_at` in UTC. Existing MCP date operations still update only `date`; callers must change the reminder separately if desired. Missing/null reminders remain null. Tests cover conversion, clearing, ownership, preservation of other fields, tool discovery, and the authenticated adapter wrapper. This inspection did not perform a live reminder write or verify device notification delivery.
+
 ## Database and document paths
 
 **Reference code:** The Firebase project ID is `mate-914f3`, and the database ID is `(default)`. Todos are stored in the shared `TodoItem` collection.

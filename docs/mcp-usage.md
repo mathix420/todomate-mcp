@@ -47,6 +47,7 @@ An undated todo has `date: null`. Find these with `list_todos(unscheduled=true)`
 | `create_todo` | `content`, **`goal_id`**, optional `day` | New todo, including its ID |
 | `update_todo` | `todo_id`, at least one of `content`, `day`, `goal_id` | Updated todo; omitted fields are unchanged |
 | `schedule_todo` | `todo_id`, **`day`** (date or explicit `null`) | Assigns a date or makes the todo undated |
+| `set_todo_reminder` | `todo_id`, **`remind_at`** (timestamp with timezone offset or explicit `null`) | Sets or clears the native alarm; returns `remind_at` in UTC |
 | `set_todo_memo` | `todo_id`, **`memo`** (text or explicit `null`), optional `public` | Sets or clears a memo; defaults to private |
 | `complete_todo` | `todo_id`, optional `completed` (defaults to `true`) | Marks complete; `false` marks incomplete |
 | `delete_todo` | `todo_id` | Deletes the selected todo |
@@ -64,6 +65,14 @@ Before creating a group, call `list_goals` and avoid duplicating an existing gro
 Before writing a diary, call `list_diaries` for the intended date. Use `update_diary` for an existing entry and resolve ambiguity if several entries are returned. Creating an entry requires its body and a mood emoji; ask for missing information instead of inventing personal diary content. Recheck after an uncertain creation response before retrying, as creation is not idempotent.
 
 Groups and diaries use explicit visibility values: `private` (only the owner), `followers` (shares with the current followers), or `public`. Both creation tools default to `private`. Sharing requires an explicit user request. An existing entry may return `selected`, meaning it is shared with specific viewers; do not describe it as private. `update_diary` preserves visibility when omitted, so check the returned visibility before adding sensitive text. Set `visibility="private"` when the user asks to remove sharing. The tools do not change account-wide visibility preferences or maintain the UI's recent emoji history.
+
+## Native reminders / alarms
+
+Use `set_todo_reminder` for native TodoMate alarms. For example, `{"todo_id": "<ID>", "remind_at": "2026-09-18T09:00:00+02:00"}` stores 09:00 in Paris on that date and returns `remind_at: "2026-09-18T07:00:00Z"`. A timezone offset or `Z` is required; date-only and timezone-free timestamps are rejected. Ask for the intended time and timezone when they are unknown. Passing `remind_at: null` clears the alarm; omitting it is an error.
+
+All todo results include `remind_at`, with `null` for an absent reminder. The tool updates only Firestore's `remindAt` field. Creating a todo still starts with no reminder; call `set_todo_reminder` with its returned ID afterward. `update_todo` and `schedule_todo` preserve the existing reminder instant, so explicitly update or clear it when changing the todo's date if needed.
+
+The field format and set/clear behavior were checked against TodoMate's shipped web application. A successful result confirms the stored field, not that a device notification was delivered; end-to-end notification delivery has not been verified. This tool does not create a reminder in the chat client. After deploying the updated server, reconnect the MCP client to refresh tool discovery.
 
 ## Memos and visibility
 

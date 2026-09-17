@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -27,3 +27,19 @@ def test_null_memo_visibility_is_private():
     todo = todo_from_document({"id": "todo", "content": "later", "date": None, "isDone": False, "isMemoPublic": None})
     assert todo.memo is None
     assert todo.memo_public is False
+
+
+@pytest.mark.parametrize("reminder, expected", [
+    (None, None),
+    (0, datetime(1970, 1, 1, tzinfo=timezone.utc)),
+    (1789714800123, datetime(2026, 9, 18, 7, 0, 0, 123000, tzinfo=timezone.utc)),
+])
+def test_reminder_is_decoded_from_milliseconds(reminder, expected):
+    todo = todo_from_document({"id": "todo", "content": "alarm", "date": None, "isDone": False, "remindAt": reminder})
+    assert todo.remind_at == expected
+
+
+@pytest.mark.parametrize("reminder", [True, "1789714800000", 1789714800000.0, {}])
+def test_invalid_reminder_storage_is_rejected(reminder):
+    with pytest.raises(ValueError, match="invalid reminder"):
+        todo_from_document({"id": "todo", "content": "alarm", "date": None, "isDone": False, "remindAt": reminder})

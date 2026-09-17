@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -125,4 +125,52 @@ def test_memo_updates_include_visibility_and_enforce_ownership():
         assert cleared.memo is None and cleared.memo_public is False
         with pytest.raises(TodoNotFoundError):
             await adapter.set_todo_memo("other", "not mine")
+    asyncio.run(run())
+
+
+def test_reminder_sets_and_clears_only_native_field():
+    async def run():
+        firestore = Firestore()
+        adapter = TodoMateAdapter(Auth(), firestore)
+        when = datetime.fromisoformat("2026-09-18T09:00:00.123+02:00")
+        result = await adapter.set_todo_reminder("one", when)
+        assert result.remind_at == when.astimezone(timezone.utc)
+        assert result.date == date(2026, 9, 5)
+        assert result.content == "first" and result.completed is False
+        assert firestore.writes[-1] == ("TodoItem/one", {"remindAt": 1789714800123}, ["remindAt"])
+        firestore.documents["TodoItem/one"]["remindAt"] = 1789714800123
+        assert (await adapter.get_todo("one")).remind_at == result.remind_at
+        assert (await adapter.list_todos(date(2026, 9, 5)))[1].remind_at == result.remind_at
+        cleared = await adapter.set_todo_reminder("one", None)
+        assert cleared.remind_at is None
+        assert firestore.writes[-1] == ("TodoItem/one", {"remindAt": None}, ["remindAt"])
+        for todo_id in ("other", "missing"):
+            with pytest.raises(TodoNotFoundError):
+                await adapter.set_todo_reminder(todo_id, when)
+        assert len(firestore.writes) == 2
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("reminder", [datetime(2026, 9, 18, 9), "2026-09-18T09:00:00+02:00", True])
+def test_reminder_rejects_invalid_or_naive_datetime_before_writing(reminder):
+    async def run():
+        firestore = Firestore()
+        with pytest.raises(ValueError, match="timezone offset"):
+            await TodoMateAdapter(Auth(), firestore).set_todo_reminder("one", reminder)
+        assert firestore.writes == []
+    asyncio.run(run())
+
+
+def test_other_edits_preserve_existing_reminder():
+    async def run():
+        firestore = Firestore()
+        firestore.documents["TodoItem/one"]["remindAt"] = 1789714800000
+        adapter = TodoMateAdapter(Auth(), firestore)
+        for result in (
+            await adapter.update_todo("one", content="changed"),
+            await adapter.schedule_todo("one", None),
+            await adapter.complete_todo("one"),
+        ):
+            assert result.remind_at == datetime(2026, 9, 18, 7, tzinfo=timezone.utc)
+        assert all("remindAt" not in fields and "remindAt" not in mask for _, fields, mask in firestore.writes)
     asyncio.run(run())

@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from .firestore import JsonValue
 
@@ -65,6 +65,7 @@ class Todo(BaseModel):
     goal_id: str | None = None
     memo: str | None = None
     memo_public: bool = False
+    remind_at: AwareDatetime | None = None
 
 
 def todo_from_document(document: dict[str, JsonValue], *, fallback_id: str | None = None) -> Todo:
@@ -72,6 +73,9 @@ def todo_from_document(document: dict[str, JsonValue], *, fallback_id: str | Non
     millis = document.get("date")
     if millis is not None and (not isinstance(millis, int) or isinstance(millis, bool)):
         raise ValueError("Todo document has an invalid date")
+    reminder = document.get("remindAt")
+    if reminder is not None and (not isinstance(reminder, int) or isinstance(reminder, bool)):
+        raise ValueError("Todo document has an invalid reminder")
     return Todo.model_validate(
         {
             "id": todo_id,
@@ -81,5 +85,6 @@ def todo_from_document(document: dict[str, JsonValue], *, fallback_id: str | Non
             "goal_id": document.get("goalID"),
             "memo": document.get("memo"),
             "memo_public": document.get("isMemoPublic") is True,
+            "remind_at": datetime.fromtimestamp(reminder / 1000, timezone.utc) if reminder is not None else None,
         }
     )

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.mcpserver import MCPServer
-from pydantic import Field
+from pydantic import AwareDatetime, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -59,6 +59,10 @@ def create_server(
             "is intended. Use todo IDs from list_todos/get_todo for changes. After an uncertain write, "
             "read back before retrying to avoid duplicates. Only report success after a successful tool result. "
             "Use list_todos(unscheduled=true) for undated todos and schedule_todo(day=null) to remove a date. "
+            "Use set_todo_reminder to set or clear a native TodoMate alarm; remind_at requires a timestamp "
+            "with a timezone offset, or explicit null to clear. Ask for the time/timezone if unknown. "
+            "Todo results include remind_at in UTC. Date changes preserve the existing reminder instant; "
+            "update the reminder separately when needed. A stored reminder does not verify notification delivery. "
             "Memos, new groups, and new diaries default to private; share only when explicitly requested. "
             "List diaries before creating or editing one for a date; do not overwrite an existing entry. "
             "Use list_goals(include_finished=true) to find groups to resume. Delete only empty groups."
@@ -141,7 +145,7 @@ def create_server(
     ) -> dict:
         return (await configured().create_todo(content, day or today(), goal_id)).model_dump(mode="json")
 
-    @mcp.tool(description="Update provided fields of one authenticated user's todo.")
+    @mcp.tool(description="Update provided fields of one authenticated user's todo. To set or clear its native alarm, use set_todo_reminder.")
     async def update_todo(
         todo_id: Annotated[str, Field(min_length=1)],
         content: Annotated[str | None, Field(min_length=1)] = None,
@@ -155,10 +159,20 @@ def create_server(
         except TodoNotFoundError:
             raise ValueError("Todo not found") from None
 
-    @mcp.tool(description="Move a todo to a calendar date, or remove its date. day is required: pass YYYY-MM-DD to schedule, or null to make it unscheduled. Find undated todos with list_todos(unscheduled=true).")
+    @mcp.tool(description="Move a todo to a calendar date, or remove its date. day is required: pass YYYY-MM-DD to schedule, or null to make it unscheduled. Find undated todos with list_todos(unscheduled=true). This preserves any reminder instant; use set_todo_reminder to change or clear its alarm.")
     async def schedule_todo(todo_id: Annotated[str, Field(min_length=1)], day: date | None) -> dict:
         try:
             return (await configured().schedule_todo(todo_id, day)).model_dump(mode="json")
+        except TodoNotFoundError:
+            raise ValueError("Todo not found") from None
+
+    @mcp.tool(description="Set or clear a todo's native TodoMate reminder/alarm. remind_at is required: an ISO 8601 timestamp with timezone offset (for example 2026-09-18T09:00:00+02:00), or null to clear. Ask for the time/timezone if unknown. Writes the native remindAt field, preserving the todo's date and other fields. Returns the stored reminder in UTC; does not verify device notification delivery.")
+    async def set_todo_reminder(
+        todo_id: Annotated[str, Field(min_length=1)],
+        remind_at: Annotated[AwareDatetime | None, Field(description="Reminder timestamp with an explicit timezone offset or Z; null clears the reminder.")],
+    ) -> dict:
+        try:
+            return (await configured().set_todo_reminder(todo_id, remind_at)).model_dump(mode="json")
         except TodoNotFoundError:
             raise ValueError("Todo not found") from None
 

@@ -4,7 +4,7 @@ This service is intended for one private TodoMate account on one running instanc
 
 ## Publishing images with GitHub Actions
 
-The [Docker workflow](../.github/workflows/docker.yml) runs the Python tests and builds a container on branch pushes, pull requests, and tags starting with `v`. It starts the container and checks `/healthz`, rejection of unauthenticated `/mcp` requests, MCP initialization, and discovery of all 16 tools before publishing.
+The [Docker workflow](../.github/workflows/docker.yml) runs the Python tests and builds a container on branch pushes, pull requests, and tags starting with `v`. It starts the container and checks `/healthz`, rejection of unauthenticated `/mcp` requests, MCP initialization, and discovery of all 17 tools (including the reminder schema) before publishing.
 
 After you upload this project to GitHub, pushes to the repository's default branch publish `ghcr.io/<owner>/<repo>:latest`. A Git tag such as `v1.0.0` publishes `ghcr.io/<owner>/<repo>:v1.0.0`. Every published build also receives a `sha-<full-commit-sha>` tag. Version tags do not move `latest`; it tracks the default branch. Pull requests and other branches only run the checks. You can also run the workflow manually from the Actions tab; publishing uses the same branch and tag rules.
 

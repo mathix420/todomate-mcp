@@ -1,6 +1,6 @@
 """TodoMate domain operations backed by Firestore documents."""
 
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 import secrets
 import string
 from typing import Any
@@ -165,6 +165,18 @@ class TodoMateAdapter:
         await self._owned(todo_id)
         document = await self._firestore.upsert_document(
             f"TodoItem/{todo_id}", {"date": _day_millis(day) if day is not None else None}, update_mask=["date"]
+        )
+        return todo_from_document(document, fallback_id=todo_id)
+
+    async def set_todo_reminder(self, todo_id: str, remind_at: datetime | None) -> Todo:
+        millis = None
+        if remind_at is not None:
+            if not isinstance(remind_at, datetime) or remind_at.utcoffset() is None:
+                raise ValueError("Reminder must be a datetime with a timezone offset")
+            millis = (remind_at.astimezone(timezone.utc) - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
+        await self._owned(todo_id)
+        document = await self._firestore.upsert_document(
+            f"TodoItem/{todo_id}", {"remindAt": millis}, update_mask=["remindAt"]
         )
         return todo_from_document(document, fallback_id=todo_id)
 

@@ -1,0 +1,164 @@
+{
+  "source": "https://glama.ai/mcp/servers/LYJ0304/todomate-mcp",
+  "upstream": "https://github.com/LYJ0304/todomate-mcp",
+  "snapshot_commit": "5d03b4a3ae9e7cc4a442e32f27a349d161222cf3",
+  "recovered_at": "2026-09-17T09:08:06.493977+00:00",
+  "note": "Recovered cached source files from Glama because the upstream GitHub repository returned HTTP 404. This is a source snapshot, not a Git clone; Git history and original file modes are unavailable.",
+  "files": [
+    {
+      "path": ".dockerignore",
+      "bytes": 92,
+      "sha256": "10c0c33346a21f43631e812d6320e50a888c0e5cd6729ae09a6a13750ac4bc41"
+    },
+    {
+      "path": ".env.example",
+      "bytes": 300,
+      "sha256": "06fe89cca4d1392e83e58407a0ac2b847a3393e6dedab1d4f236bd1fc9599f51"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 96,
+      "sha256": "ff77e6e70a77930cafc443c37d844560a74462ec700ddc60ed7c619e7ed87115"
+    },
+    {
+      "path": "Dockerfile",
+      "bytes": 368,
+      "sha256": "b2d05ab9c1e9a6de96bccfd6987d99e123ac0a16dab050904172b75535408cd1"
+    },
+    {
+      "path": "README.en.md",
+      "bytes": 2110,
+      "sha256": "f3b1dd22571e66a962b2deb483c7d97d1d8c016005b671fbbf226666ee7a308c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2330,
+      "sha256": "d3ec1fe66ecf7f5516a33a9e3c6ccc01586379274ab3c38d8ea35fab11bf705a"
+    },
+    {
+      "path": "docs/authentication.md",
+      "bytes": 11828,
+      "sha256": "bc4ef0ea2fe0041320c96e9f3a0517e3c31e79d0dec697a67690c5d5c8a5b451"
+    },
+    {
+      "path": "docs/credentials.md",
+      "bytes": 1741,
+      "sha256": "197185dc205ef4c3170d444d592d1935df961c82a2d0beb95d2c97382d79167f"
+    },
+    {
+      "path": "docs/deployment.md",
+      "bytes": 2664,
+      "sha256": "c707e5d2aa80fc3fa7465aaa21e766999b93e8591c1a2276d87bc3c321c56806"
+    },
+    {
+      "path": "docs/firestore.md",
+      "bytes": 10435,
+      "sha256": "60642f9cbd69cfd6d9eae80f65dc3a96f56b502604e89e8bef6598a90e853034"
+    },
+    {
+      "path": "pyproject.toml",
+      "bytes": 529,
+      "sha256": "0ab163a58d7f8020ec65ed0f4f0af0ca8b02b62d3c2e3afc6d255d8e4414d7b1"
+    },
+    {
+      "path": "src/todomate_mcp/__init__.py",
+      "bytes": 28,
+      "sha256": "ebb55e6e6b059bc70a55c135c9bdd1e1fc21b97232eab0b3bc3f106c459f5c31"
+    },
+    {
+      "path": "src/todomate_mcp/auth/__init__.py",
+      "bytes": 36,
+      "sha256": "0a5a7b8a6951d1bfb60ae0152cec656ed649e9caf250195a7aa8a4ef50037e2d"
+    },
+    {
+      "path": "src/todomate_mcp/auth/credentials.py",
+      "bytes": 1511,
+      "sha256": "4fbe682d698c3d5473351d6496415f2fcca43a5983519ecc95e4d92991d4a817"
+    },
+    {
+      "path": "src/todomate_mcp/firebase_auth.py",
+      "bytes": 5488,
+      "sha256": "f254187c320834efeb5e93570feddce0635e6dbe6efd0b23fe80da9308fad584"
+    },
+    {
+      "path": "src/todomate_mcp/firestore.py",
+      "bytes": 7243,
+      "sha256": "b9098b4d0180a90bdd61369a183a9ecef3d82c66d0a582b27dafefa75db5e1b4"
+    },
+    {
+      "path": "src/todomate_mcp/models.py",
+      "bytes": 1016,
+      "sha256": "34422ac4575921b5ea54e75cf5a31bf52bda4f9075a6f7dcf35bfd12c3b0830b"
+    },
+    {
+      "path": "src/todomate_mcp/server.py",
+      "bytes": 7600,
+      "sha256": "dad708a81fa0971093071a02fa081c7b0351569d1c0d1f322e9e5119fd45b155"
+    },
+    {
+      "path": "src/todomate_mcp/settings.py",
+      "bytes": 1106,
+      "sha256": "dc12589b655aa466e02fe0ba5747e0a8b0c1f8bed0a20556577262fb17897ad7"
+    },
+    {
+      "path": "src/todomate_mcp/todomate.py",
+      "bytes": 4737,
+      "sha256": "a51b048ce2765b9efe1914180428371eecddd23f4eede035ef713c8696970beb"
+    },
+    {
+      "path": "src/todomate_mcp/tools.py",
+      "bytes": 4817,
+      "sha256": "098bf40a26752d9b87b639dcc6561c575ad6889e2481793b5036a6846d79389a"
+    },
+    {
+      "path": "tests/.gitkeep",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "tests/test_credentials.py",
+      "bytes": 1572,
+      "sha256": "0f14902b049417c9410a67590b73b429a92cd1839863aacf458b7a043d71768d"
+    },
+    {
+      "path": "tests/test_firebase_auth.py",
+      "bytes": 6548,
+      "sha256": "60e406b7c38e1645b63817cccad0e79936b7c363014772aca41288e0ca01d7cd"
+    },
+    {
+      "path": "tests/test_firestore.py",
+      "bytes": 3260,
+      "sha256": "d8683c8c4055cb39468075cd8a9694c71c6581d35202b63d507ef973e280700e"
+    },
+    {
+      "path": "tests/test_login_cli.py",
+      "bytes": 4836,
+      "sha256": "fa0f64f5f83d9b58f66b0d1c246f45b4134a19f8cafc348dcfb982fa32d98f55"
+    },
+    {
+      "path": "tests/test_models.py",
+      "bytes": 601,
+      "sha256": "b938c373f581dde1631527683a50c54b20b294ca6e41661811c37313b38577a5"
+    },
+    {
+      "path": "tests/test_server.py",
+      "bytes": 10147,
+      "sha256": "10acf71014a2676c3ac4d04de91d91677b8839d32069367bd849a31c699786c2"
+    },
+    {
+      "path": "tests/test_settings.py",
+      "bytes": 1306,
+      "sha256": "d815d0a2113904730bd8b2016ee7907a220667eddbc54fbe87718b258d030b94"
+    },
+    {
+      "path": "tests/test_todomate.py",
+      "bytes": 2329,
+      "sha256": "242f8ef596ac7cae7e5cda48a64f9c3579b95242cb3d64975a9dd1eb38f29352"
+    },
+    {
+      "path": "uv.lock",
+      "bytes": 124333,
+      "sha256": "f5515ff8371ecfd5fd12ed034907da0960a2eafaf5b23a14ef1c6721e623d4aa"
+    }
+  ]
+}

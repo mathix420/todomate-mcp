@@ -14,6 +14,7 @@ from pydantic import AwareDatetime, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .api import register_api
 from .todomate import RecordNotFoundError, TodoMateAdapter, TodoNotFoundError
 
 Visibility = Literal["private", "followers", "public"]
@@ -71,6 +72,12 @@ def create_server(
         token_verifier=token_verifier,
     )
     today = today or (lambda: datetime.now(time_zone).date())
+    register_api(
+        mcp, adapter,
+        verify_token=token_verifier.verify_token if token_verifier else None,
+        today=today,
+        timezone_name=timezone_name,
+    )
 
     def configured() -> TodoMateAdapter:
         if adapter is None:

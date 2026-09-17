@@ -2,6 +2,8 @@
 
 A Python MCP server that lists, creates, updates, completes, and deletes TodoMate Firestore todos.
 
+The same HTTP service also exposes a small authenticated task API for applications such as Alfred.
+
 ## Original source
 
 This repository is based on [LYJ0304's todomate-mcp, archived on Glama](https://glama.ai/mcp/servers/LYJ0304/todomate-mcp). Credit for the original project goes to LYJ0304. The source snapshot was recovered from Glama after the [upstream GitHub repository](https://github.com/LYJ0304/todomate-mcp) returned HTTP 404, and this repository includes subsequent changes. Recovery details are recorded in [.glama-recovery.json](.glama-recovery.json).
@@ -69,6 +71,51 @@ uv run todomate-mcp auth login
 uv run todomate-mcp auth status
 uv run todomate-mcp auth logout
 ```
+
+## Task HTTP API
+
+HTTP mode serves these routes on the same port as `/mcp`. Each request requires `Authorization: Bearer <TODOMATE_MCP_ACCESS_TOKEN>` and uses the same connected TodoMate account. No MCP initialization or separate API key is needed.
+
+| Route | Result |
+| --- | --- |
+| `GET /api/tasks` | Today's tasks, including completed tasks, with group metadata. Today follows the server's `TZ`. |
+| `GET /api/tasks?day=2026-09-18` | Tasks scheduled on that calendar date. |
+| `GET /api/tasks?include_unscheduled=true` | Today's tasks followed by undated tasks; can also be combined with `day`. |
+| `GET /api/tasks?unscheduled=true` | Undated tasks only; cannot be combined with `day` or `include_unscheduled=true`. |
+| `GET /api/tasks/{id}` | One task, returned as `{"task": {...}}`. URL-encode the original task ID. |
+| `POST /api/tasks/{id}/complete` | Set completion with JSON `{"completed": true}` or `{"completed": false}`; returns `{"task": {...}}`. |
+
+The task-list response is:
+
+```json
+{
+  "tasks": [{
+    "id": "original-todomate-id",
+    "title": "Prepare the meeting",
+    "goalId": "original-goal-id",
+    "memo": "Bring the notes.",
+    "memoPublic": false,
+    "date": "2026-09-18",
+    "dueAt": "2026-09-18T07:30:00Z",
+    "completed": false
+  }],
+  "goals": [{
+    "id": "original-goal-id",
+    "title": "Work",
+    "status": "active",
+    "visibility": "private",
+    "color": 4294929858
+  }],
+  "date": "2026-09-18",
+  "timezone": "Europe/Paris"
+}
+```
+
+`goalId`, `memo`, `date`, and `dueAt` can be `null`. `dueAt` is the actual native reminder instant, not an invented time for a scheduled date. Group metadata includes finished groups, so existing tasks retain their labels and colors. Responses preserve full task text; clients choose their own display limits and focus priority.
+
+Completion reads the current task before writing. Repeating an already-applied completion returns success without changing its completion timestamp again. After a lost response, retry the same desired state; the read confirms whether the first write persisted. The API never treats an unconfirmed upstream result as success.
+
+Errors use `{"error":{"code":"...","message":"..."}}`: invalid inputs return `400`, missing or invalid bearer tokens `401`, missing or unowned tasks `404`, oversized bodies `413`, non-JSON writes `415`, upstream failures `502`, and disconnected or expired TodoMate credentials `503`. API responses use `Cache-Control: no-store`. `/healthz` remains public and does not expose account or task data.
 
 ## Deployment
 

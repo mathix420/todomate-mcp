@@ -1,4 +1,4 @@
-"""Check a running MCP server, optionally including a real read of today's todos."""
+"""Check HTTP/MCP authentication, optionally reading the connected account's tasks."""
 
 import argparse
 import asyncio
@@ -10,12 +10,25 @@ from mcp.client.streamable_http import streamable_http_client
 
 
 async def check(url: str, token: str, require_credentials: bool) -> None:
+    api_url = url.removesuffix("/mcp") + "/api/tasks"
     async with httpx.AsyncClient(timeout=15) as http:
         health = await http.get(url.removesuffix("/mcp") + "/healthz")
         assert health.status_code == 200 and health.json() == {"status": "ok"}
         for headers in ({}, {"Authorization": "Bearer invalid-token"}):
             assert (await http.post(url, json={}, headers=headers)).status_code == 401
-    print("PASS: health check and rejection of missing/invalid bearer tokens")
+            assert (await http.get(api_url, headers=headers)).status_code == 401
+            assert (await http.post(api_url + "/unauthenticated-check/complete", json={"completed": True}, headers=headers)).status_code == 401
+        tasks = await http.get(api_url, headers={"Authorization": f"Bearer {token}"})
+        assert tasks.status_code in (200, 503)
+        assert tasks.headers["cache-control"] == "no-store"
+        if require_credentials:
+            assert tasks.status_code == 200, "Task API failed; check TodoMate login and server logs"
+        if tasks.status_code == 200:
+            assert set(tasks.json()) == {"tasks", "goals", "date", "timezone"}
+            assert isinstance(tasks.json()["tasks"], list) and isinstance(tasks.json()["goals"], list)
+        else:
+            assert tasks.json()["error"]["code"] in {"not_connected", "reauthentication_required"}
+    print("PASS: health check, task API, and HTTP/MCP rejection of missing/invalid bearer tokens")
 
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as http:
         async with Client(streamable_http_client(url, http_client=http)) as client:

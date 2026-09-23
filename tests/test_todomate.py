@@ -36,7 +36,10 @@ class Firestore:
             raise FirestoreError("get", 404)
         return self.documents[path]
 
-    async def upsert_document(self, path, fields, *, update_mask=()):
+    async def get_document_versioned(self, path):
+        return await self.get_document(path), "2026-09-23T10:00:00Z"
+
+    async def upsert_document(self, path, fields, *, update_mask=(), update_time=None):
         self.writes.append((path, fields, update_mask))
         return self.documents.get(path, {}) | fields | {"id": path.split("/")[1]}
 

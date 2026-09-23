@@ -15,7 +15,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .api import register_api
-from .todomate import RecordNotFoundError, TodoMateAdapter, TodoNotFoundError
+from .todomate import RecordNotFoundError, TaskConflictError, TodoMateAdapter, TodoNotFoundError
 
 Visibility = Literal["private", "followers", "public"]
 GoalStatus = Literal["active", "done", "ended", "stopped"]
@@ -66,7 +66,9 @@ def create_server(
             "update the reminder separately when needed. A stored reminder does not verify notification delivery. "
             "Memos, new groups, and new diaries default to private; share only when explicitly requested. "
             "List diaries before creating or editing one for a date; do not overwrite an existing entry. "
-            "Use list_goals(include_finished=true) to find groups to resume. Delete only empty groups."
+            "Use list_goals(include_finished=true) to find groups to resume. Delete only empty groups. "
+            "Use set_todo_timer only when requested: start also resumes, pause retains elapsed time, "
+            "and stop saves elapsed time AND completes the task. Reopen a completed task before starting its timer."
         ),
         auth=auth,
         token_verifier=token_verifier,
@@ -143,6 +145,15 @@ def create_server(
             return (await configured().get_todo(todo_id)).model_dump(mode="json")
         except TodoNotFoundError:
             raise ValueError("Todo not found") from None
+
+    @mcp.tool(description="Start/resume, pause, or stop a task's native TodoMate timer. Stop saves elapsed time AND completes the task. Use a todo ID from list_todos/get_todo. Reopen completed tasks first. Results include timer.started_at (UTC, null when paused), timer.elapsed_seconds (previous intervals only), and spent_time_seconds. Only change a timer when requested; on a conflict refresh before trying again.")
+    async def set_todo_timer(todo_id: Annotated[str, Field(min_length=1)], action: Literal["start", "pause", "stop"]) -> dict:
+        try:
+            return (await configured().timer_todo(todo_id, action)).model_dump(mode="json")
+        except TodoNotFoundError:
+            raise ValueError("Todo not found") from None
+        except TaskConflictError:
+            raise ValueError("Task state changed or timer action is unavailable; refresh first") from None
 
     @mcp.tool(description=f"Create a todo in one of the user's groups. First call list_goals and choose its goal_id. Date defaults to today in {timezone_name}, configured by TZ.")
     async def create_todo(

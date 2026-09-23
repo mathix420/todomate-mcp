@@ -18,7 +18,7 @@ EXPECTED_TOOLS = {
     "list_goals", "create_goal", "set_goal_status", "delete_goal",
     "list_diaries", "create_diary", "update_diary", "delete_diary",
     "list_todos", "get_todo", "create_todo", "update_todo", "schedule_todo",
-    "set_todo_memo", "set_todo_reminder", "complete_todo", "delete_todo",
+    "set_todo_memo", "set_todo_reminder", "set_todo_timer", "complete_todo", "delete_todo",
 }
 
 

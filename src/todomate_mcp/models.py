@@ -55,6 +55,13 @@ def diary_from_document(document: dict[str, JsonValue]) -> Diary:
     })
 
 
+class TodoTimer(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    started_at: AwareDatetime | None
+    elapsed_seconds: int = Field(strict=True, ge=0)
+
+
 class Todo(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -66,6 +73,28 @@ class Todo(BaseModel):
     memo: str | None = None
     memo_public: bool = False
     remind_at: AwareDatetime | None = None
+    timer: TodoTimer | None = None
+    spent_time_seconds: int | None = Field(default=None, strict=True, ge=0)
+
+
+def timer_from_document(document: dict[str, JsonValue]) -> TodoTimer | None:
+    if document.get("hasTimer") is not True:
+        if document.get("timer") is not None:
+            raise ValueError("Todo document has inconsistent timer state")
+        return None
+    raw = document.get("timer")
+    if not isinstance(raw, dict) or "startTime" not in raw:
+        raise ValueError("Todo document has an invalid timer")
+    start = raw["startTime"]
+    saved = raw.get("savedDuration")
+    if start is not None and (type(start) is not int or start < 0):
+        raise ValueError("Todo document has an invalid timer start")
+    if type(saved) is not int or saved < 0:
+        raise ValueError("Todo document has an invalid timer duration")
+    return TodoTimer(
+        started_at=datetime.fromtimestamp(start / 1000, timezone.utc) if start is not None else None,
+        elapsed_seconds=saved,
+    )
 
 
 def todo_from_document(document: dict[str, JsonValue], *, fallback_id: str | None = None) -> Todo:
@@ -86,5 +115,7 @@ def todo_from_document(document: dict[str, JsonValue], *, fallback_id: str | Non
             "memo": document.get("memo"),
             "memo_public": document.get("isMemoPublic") is True,
             "remind_at": datetime.fromtimestamp(reminder / 1000, timezone.utc) if reminder is not None else None,
+            "timer": timer_from_document(document),
+            "spent_time_seconds": document.get("spentTime"),
         }
     )

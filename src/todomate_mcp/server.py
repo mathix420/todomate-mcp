@@ -73,6 +73,9 @@ class _ConfiguredAdapter:
     async def complete_todo(self, todo_id: str, completed: bool) -> Any:
         return await self._call(lambda: self._adapter.complete_todo(todo_id, completed))
 
+    async def timer_todo(self, todo_id: str, action: str) -> Any:
+        return await self._call(lambda: self._adapter.timer_todo(todo_id, action))
+
     async def schedule_todo(self, todo_id: str, day: date | None) -> Any:
         return await self._call(lambda: self._adapter.schedule_todo(todo_id, day))
 

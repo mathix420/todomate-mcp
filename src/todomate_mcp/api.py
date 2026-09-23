@@ -12,7 +12,7 @@ from starlette.responses import JSONResponse
 
 from .firebase_auth import AuthenticationError
 from .models import Todo
-from .todomate import RecordNotFoundError, TodoMateAdapter
+from .todomate import RecordNotFoundError, TaskConflictError, TodoMateAdapter
 
 
 class ApiError(Exception):
@@ -32,6 +32,8 @@ def task_json(todo: Todo) -> dict:
         "date": raw["date"],
         "dueAt": raw["remind_at"],
         "completed": raw["completed"],
+        "timer": {"startedAt": raw["timer"]["started_at"], "elapsedSeconds": raw["timer"]["elapsed_seconds"]} if raw["timer"] else None,
+        "spentTimeSeconds": raw["spent_time_seconds"],
     }
 
 
@@ -45,7 +47,7 @@ def register_api(
 ) -> None:
     # Serializing the read-before-write makes repeated completion requests on this
     # API idempotent, including a retry after an uncertain response was lost.
-    completion_lock = asyncio.Lock()
+    task_lock = asyncio.Lock()
 
     def response(value: dict, status: int = 200) -> JSONResponse:
         headers = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
@@ -77,6 +79,8 @@ def register_api(
                     return response({"error": {"code": error.code, "message": error.message}}, error.status)
                 except RecordNotFoundError:
                     return response({"error": {"code": "task_not_found", "message": "Task not found."}}, 404)
+                except TaskConflictError:
+                    return response({"error": {"code": "task_conflict", "message": "Task state changed or this action is unavailable. Refresh before retrying."}}, 409)
                 except AuthenticationError:
                     return response({"error": {"code": "reauthentication_required", "message": "Sign in to TodoMate again."}}, 503)
                 except Exception:
@@ -137,9 +141,7 @@ def register_api(
         assert adapter is not None
         return {"task": task_json(await adapter.get_todo(task_id(request)))}
 
-    @endpoint("/api/tasks/{todo_id}/complete", ["POST"])
-    async def complete_task(request: Request) -> dict:
-        ident = task_id(request)
+    async def json_body(request: Request) -> object:
         if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
             raise ApiError("invalid_content_type", "Send application/json.", 415)
         body = bytearray()
@@ -148,16 +150,40 @@ def register_api(
                 raise ApiError("request_too_large", "The request body is too large.", 413)
             body.extend(chunk)
         try:
-            value = json.loads(body)
+            return json.loads(body)
         except (ValueError, UnicodeError):
-            raise ApiError("invalid_request", "Send a JSON object with a completed boolean.", 400) from None
+            raise ApiError("invalid_request", "Send a valid JSON object.", 400) from None
+
+    @endpoint("/api/tasks/{todo_id}/complete", ["POST"])
+    async def complete_task(request: Request) -> dict:
+        ident = task_id(request)
+        value = await json_body(request)
         if not isinstance(value, dict) or set(value) != {"completed"} or type(value["completed"]) is not bool:
             raise ApiError("invalid_request", "Send a JSON object with a completed boolean.", 400)
         assert adapter is not None
-        async with completion_lock:
+        async with task_lock:
             todo = await adapter.get_todo(ident)
-            if todo.completed != value["completed"]:
+            if todo.completed != value["completed"] or (value["completed"] and todo.timer is not None):
                 todo = await adapter.complete_todo(ident, value["completed"])
             if todo.id != ident or todo.completed != value["completed"]:
                 raise ApiError("completion_unconfirmed", "TodoMate did not confirm this change.", 502)
+        return {"task": task_json(todo)}
+
+    @endpoint("/api/tasks/{todo_id}/timer", ["POST"])
+    async def task_timer(request: Request) -> dict:
+        ident = task_id(request)
+        value = await json_body(request)
+        if (not isinstance(value, dict) or set(value) != {"action"}
+                or not isinstance(value["action"], str) or value["action"] not in {"start", "pause", "stop"}):
+            raise ApiError("invalid_request", "Send an action: start, pause, or stop.", 400)
+        assert adapter is not None
+        async with task_lock:
+            todo = await adapter.timer_todo(ident, value["action"])
+            confirmed = todo.id == ident and {
+                "start": not todo.completed and todo.timer is not None and todo.timer.started_at is not None,
+                "pause": not todo.completed and todo.timer is not None and todo.timer.started_at is None,
+                "stop": todo.completed and todo.timer is None,
+            }[value["action"]]
+            if not confirmed:
+                raise ApiError("timer_unconfirmed", "TodoMate did not confirm this change.", 502)
         return {"task": task_json(todo)}

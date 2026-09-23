@@ -3,7 +3,7 @@
 from datetime import date, datetime, time, timedelta, timezone
 import secrets
 import string
-from typing import Any
+from typing import Any, Literal
 
 from .firebase_auth import FirebaseAuthSession
 from .firestore import FirestoreClient, FirestoreError, JsonValue
@@ -16,6 +16,10 @@ class RecordNotFoundError(LookupError):
 
 class TodoNotFoundError(RecordNotFoundError):
     pass
+
+
+class TaskConflictError(Exception):
+    """A stale write or an action incompatible with the current task state."""
 
 
 class TodoMateAdapter:
@@ -187,12 +191,94 @@ class TodoMateAdapter:
         return todo_from_document(document, fallback_id=todo_id)
 
     async def complete_todo(self, todo_id: str, completed: bool = True) -> Todo:
-        await self._owned(todo_id)
-        fields: dict[str, JsonValue] = {"isDone": completed}
-        if completed:
-            fields["doneTime"] = _now_millis()
-        document = await self._firestore.upsert_document(f"TodoItem/{todo_id}", fields, update_mask=list(fields))
+        if type(completed) is not bool:
+            raise ValueError("completed must be a boolean")
+        document, version = await self._owned_versioned(todo_id)
+        todo = todo_from_document(document, fallback_id=todo_id)
+        if todo.completed == completed and (not completed or todo.timer is None):
+            return todo
+        now = _now_millis()
+        fields: dict[str, JsonValue] = {"isDone": completed, "doneTime": now if completed else None}
+        if completed and todo.timer is not None:
+            fields.update(self._stop_fields(document, now))
+        return await self._change_task(todo_id, fields, list(fields), version)
+
+    async def timer_todo(self, todo_id: str, action: Literal["start", "pause", "stop"]) -> Todo:
+        """Apply the native timer transition; stopping also completes the task."""
+        if action not in {"start", "pause", "stop"}:
+            raise ValueError("Unknown timer action")
+        document, version = await self._owned_versioned(todo_id)
+        todo = todo_from_document(document, fallback_id=todo_id)
+        timer = todo.timer
+        if action == "stop" and todo.completed and timer is None:
+            return todo
+        if todo.completed:
+            raise TaskConflictError("Reopen the task before changing its timer")
+        now = _now_millis()
+        if action == "start":
+            if timer is not None and timer.started_at is not None:
+                return todo
+            fields: dict[str, JsonValue] = {
+                "hasTimer": True,
+                "timer": {
+                    "startTime": now,
+                    "savedDuration": timer.elapsed_seconds if timer else (todo.spent_time_seconds or 0),
+                    "todoItemId": todo_id,
+                    "todoItemContent": todo.content,
+                },
+            }
+            mask = ["hasTimer", "timer.savedDuration", "timer.startTime", "timer.todoItemContent", "timer.todoItemId"]
+        else:
+            if timer is None:
+                raise TaskConflictError("This task has no timer")
+            if action == "pause":
+                if timer.started_at is None:
+                    return todo
+                fields = {"timer": {"startTime": None, "savedDuration": self._elapsed(document, now)}}
+                mask = ["timer.savedDuration", "timer.startTime"]
+            else:
+                fields = self._stop_fields(document, now)
+                mask = ["doneTime", "hasTimer", "isDone", "spentTime", "timer"]
+        return await self._change_task(todo_id, fields, mask, version)
+
+    @staticmethod
+    def _elapsed(document: dict[str, JsonValue], now: int) -> int:
+        # The model was validated before this helper. Native startTime uses ms;
+        # savedDuration/spentTime use whole seconds. Paused time never accrues.
+        timer = document["timer"]
+        start = timer["startTime"]
+        return timer["savedDuration"] + (max(0, now - start) // 1000 if start is not None else 0)
+
+    @classmethod
+    def _stop_fields(cls, document: dict[str, JsonValue], now: int) -> dict[str, JsonValue]:
+        return {"isDone": True, "doneTime": now, "spentTime": min(72000, cls._elapsed(document, now)),
+                "timer": None, "hasTimer": False}
+
+    async def _change_task(self, todo_id: str, fields: dict[str, JsonValue], mask: list[str], version: str) -> Todo:
+        try:
+            document = await self._firestore.upsert_document(
+                f"TodoItem/{todo_id}", fields, update_mask=mask, update_time=version,
+            )
+        except FirestoreError as error:
+            if error.status_code in {409, 412}:
+                raise TaskConflictError("Task changed on another device; refresh before retrying") from None
+            if error.status_code == 404:
+                raise TodoNotFoundError(todo_id) from None
+            raise
         return todo_from_document(document, fallback_id=todo_id)
+
+    async def _owned_versioned(self, todo_id: str) -> tuple[dict[str, JsonValue], str]:
+        if not todo_id or "/" in todo_id:
+            raise ValueError("A valid document ID is required")
+        try:
+            document, version = await self._firestore.get_document_versioned(f"TodoItem/{todo_id}")
+        except FirestoreError as error:
+            if error.status_code == 404:
+                raise TodoNotFoundError(todo_id) from None
+            raise
+        if document.get("writerID") != self._auth.uid:
+            raise TodoNotFoundError(todo_id)
+        return document, version
 
     async def delete_todo(self, todo_id: str) -> None:
         await self._owned(todo_id)

@@ -1,7 +1,9 @@
 """Small authenticated Cloud Firestore REST client."""
 
 import math
+import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 from urllib.parse import quote
 
@@ -10,6 +12,29 @@ import httpx
 from .firebase_auth import FirebaseAuthSession
 
 JsonValue = None | bool | float | int | str | list["JsonValue"] | dict[str, "JsonValue"]
+
+_UPDATE_TIME = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"
+    r"(?:\.([0-9]{1,9}))?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
+)
+
+
+def _validate_update_time(value: Any) -> str:
+    """Keep the exact Firestore version; never round a CAS precondition.
+
+    Firestore requires a microsecond-aligned RFC3339 timestamp for updateTime
+    preconditions. Validate before sending so an invalid version cannot silently
+    become an unconditional write.
+    https://firebase.google.com/docs/firestore/reference/rest/v1/Precondition
+    """
+    match = _UPDATE_TIME.fullmatch(value) if isinstance(value, str) else None
+    if match is None or any(digit != "0" for digit in (match.group(1) or "")[6:]):
+        raise ValueError("Invalid Firestore updateTime precondition")
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        raise ValueError("Invalid Firestore updateTime precondition") from None
+    return value
 
 
 class FirestoreError(Exception):
@@ -101,14 +126,38 @@ class FirestoreClient:
     async def get_document(self, path: str) -> dict[str, JsonValue]:
         return await self._request_document("get", "GET", path)
 
+    async def get_document_versioned(self, path: str) -> tuple[dict[str, JsonValue], str]:
+        """Read fields plus the exact version for a conditional upsert.
+
+        Missing or malformed updateTime fails closed. Callers must re-read and
+        recompute after a failed precondition; this client never retries a stale
+        write or falls back to an unconditional write.
+        """
+        response = await self._request("get", "GET", path)
+        try:
+            document = response.json()
+            update_time = _validate_update_time(document.get("updateTime"))
+            return decode_fields(document.get("fields", {})), update_time
+        except (AttributeError, TypeError, ValueError):
+            raise FirestoreError("get", response.status_code) from None
+
     async def upsert_document(
         self,
         path: str,
         fields: Mapping[str, JsonValue],
         *,
         update_mask: Sequence[str] = (),
+        update_time: str | None = None,
     ) -> dict[str, JsonValue]:
+        """Patch fields, optionally only if the existing version still matches.
+
+        Omitting update_time preserves unconditional upsert behavior. When a
+        version is supplied, deletion or a concurrent edit makes Firestore reject
+        the request; its status is exposed through FirestoreError.status_code.
+        """
         params = [("updateMask.fieldPaths", field) for field in update_mask]
+        if update_time is not None:
+            params.append(("currentDocument.updateTime", _validate_update_time(update_time)))
         return await self._request_document(
             "upsert", "PATCH", path, params=params, json={"fields": encode_fields(fields)}
         )

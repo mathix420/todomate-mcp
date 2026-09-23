@@ -70,7 +70,7 @@ def test_every_api_route_requires_same_bearer_token(authorization):
     async def run():
         adapter = Adapter()
         async with api(adapter) as client:
-            for method, path in [("GET", "/api/tasks"), ("GET", TASK_URL), ("POST", TASK_URL + "/complete")]:
+            for method, path in [("GET", "/api/tasks"), ("GET", TASK_URL), ("POST", TASK_URL + "/complete"), ("POST", TASK_URL + "/timer")]:
                 response = await client.request(method, path, headers={"Authorization": authorization}, json={"completed": True})
                 assert response.status_code == 401
                 assert response.headers["www-authenticate"].startswith("Bearer")
@@ -98,9 +98,9 @@ def test_lists_native_task_fields_completed_tasks_and_group_metadata(monkeypatch
             assert data["tasks"] == [
                 {"id": TASK_ID, "title": "Préparer le rendez-vous", "goalId": "work",
                  "memo": "Bring the notes.\n\nCall Léa first.", "memoPublic": False,
-                 "date": "2026-09-18", "dueAt": "2026-09-18T07:30:00Z", "completed": False},
+                 "date": "2026-09-18", "dueAt": "2026-09-18T07:30:00Z", "completed": False, "timer": None, "spentTimeSeconds": None},
                 {"id": "done", "title": "Already finished", "goalId": "work", "memo": None,
-                 "memoPublic": False, "date": "2026-09-18", "dueAt": None, "completed": True},
+                 "memoPublic": False, "date": "2026-09-18", "dueAt": None, "completed": True, "timer": None, "spentTimeSeconds": None},
             ]
             assert [(goal["id"], goal["status"]) for goal in data["goals"]] == [("work", "active"), ("old", "done")]
             assert data["goals"][0]["color"] == 0xFFFF1122

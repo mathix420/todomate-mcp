@@ -18,6 +18,7 @@ async def check(url: str, token: str, require_credentials: bool) -> None:
             assert (await http.post(url, json={}, headers=headers)).status_code == 401
             assert (await http.get(api_url, headers=headers)).status_code == 401
             assert (await http.post(api_url + "/unauthenticated-check/complete", json={"completed": True}, headers=headers)).status_code == 401
+            assert (await http.post(api_url + "/unauthenticated-check/timer", json={"action": "start"}, headers=headers)).status_code == 401
         tasks = await http.get(api_url, headers={"Authorization": f"Bearer {token}"})
         assert tasks.status_code in (200, 503)
         assert tasks.headers["cache-control"] == "no-store"
@@ -34,11 +35,14 @@ async def check(url: str, token: str, require_credentials: bool) -> None:
         async with Client(streamable_http_client(url, http_client=http)) as client:
             tools = (await client.list_tools()).tools
             names = {tool.name for tool in tools}
-            assert names == {'list_goals', 'create_goal', 'set_goal_status', 'delete_goal', 'list_diaries', 'create_diary', 'update_diary', 'delete_diary', 'list_todos', 'get_todo', 'create_todo', 'update_todo', 'schedule_todo', 'set_todo_memo', 'set_todo_reminder', 'complete_todo', 'delete_todo'}
+            assert names == {'list_goals', 'create_goal', 'set_goal_status', 'delete_goal', 'list_diaries', 'create_diary', 'update_diary', 'delete_diary', 'list_todos', 'get_todo', 'create_todo', 'update_todo', 'schedule_todo', 'set_todo_memo', 'set_todo_reminder', 'set_todo_timer', 'complete_todo', 'delete_todo'}
             reminder = next(tool for tool in tools if tool.name == "set_todo_reminder")
             assert set(reminder.input_schema["required"]) == {"todo_id", "remind_at"}
             assert {part["type"] for part in reminder.input_schema["properties"]["remind_at"]["anyOf"]} == {"string", "null"}
-            print("PASS: MCP initialization and discovery of all 17 tools, including reminder schema")
+            timer = next(tool for tool in tools if tool.name == "set_todo_timer")
+            assert set(timer.input_schema["required"]) == {"todo_id", "action"}
+            assert set(timer.input_schema["properties"]["action"]["enum"]) == {"start", "pause", "stop"}
+            print("PASS: MCP initialization and discovery of all 18 tools, including reminder and timer schemas")
             if require_credentials:
                 goals = await client.call_tool("list_goals")
                 if goals.is_error:

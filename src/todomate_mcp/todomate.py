@@ -260,7 +260,7 @@ class TodoMateAdapter:
                 f"TodoItem/{todo_id}", fields, update_mask=mask, update_time=version,
             )
         except FirestoreError as error:
-            if error.status_code in {409, 412}:
+            if error.status_code in {409, 412} or error.canonical_status in {"FAILED_PRECONDITION", "ABORTED"}:
                 raise TaskConflictError("Task changed on another device; refresh before retrying") from None
             if error.status_code == 404:
                 raise TodoNotFoundError(todo_id) from None

@@ -201,3 +201,52 @@ def test_stale_or_deleted_document_never_retries_unconditionally(status):
         assert len(requests) == 1
         assert requests[0].url.params["currentDocument.updateTime"] == "2026-09-23T12:34:56.123456Z"
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("status,canonical", [
+    (400, "FAILED_PRECONDITION"), (400, "INVALID_ARGUMENT"), (409, "ABORTED"),
+    (403, "PERMISSION_DENIED"),
+])
+def test_error_preserves_only_allowlisted_canonical_status(status, canonical):
+    async def run():
+        seen = []
+
+        def handle(request):
+            seen.append(request)
+            return httpx.Response(status, json={"error": {
+                "code": status, "status": canonical, "message": "private-document-secret",
+                "details": [{"token": "private-token-secret"}],
+            }})
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+            with pytest.raises(FirestoreError) as caught:
+                await FirestoreClient(Auth(), http).upsert_document(
+                    "TodoItem/id", {"elapsed": 43},
+                    update_time="2026-09-23T12:34:56Z",
+                )
+            error = caught.value
+            assert error.canonical_status == canonical
+            assert (error.operation, error.status_code) == ("upsert", status)
+            assert str(error) == f"Firestore upsert failed: http_{status}"
+            assert "secret" not in repr(vars(error))
+            assert set(vars(error)) == {"operation", "status_code", "canonical_status"}
+        assert len(seen) == 1
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("document", [
+    {"error": {"status": "private-secret"}}, {"error": {"status": ["ABORTED"]}},
+    {"error": {"status": {"secret": "value"}}}, {"error": {"status": None}},
+    {"error": "private-secret"}, {"error": {}}, {}, [], None,
+])
+def test_untrusted_error_body_does_not_become_canonical_status(document):
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda _: httpx.Response(400, json=document)
+        )) as http:
+            with pytest.raises(FirestoreError) as caught:
+                await FirestoreClient(Auth(), http).get_document("TodoItem/id")
+            assert caught.value.canonical_status is None
+            assert str(caught.value) == "Firestore get failed: http_400"
+            assert "secret" not in repr(vars(caught.value))
+    asyncio.run(run())

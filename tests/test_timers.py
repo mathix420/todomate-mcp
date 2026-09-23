@@ -153,6 +153,23 @@ def test_stale_write_is_rejected_without_overwriting_other_device(setup):
     asyncio.run(run())
 
 
+def test_firestore_failed_precondition_http_400_is_public_conflict(setup):
+    adapter, store, _ = setup
+
+    async def rejected(*_, **__):
+        raise FirestoreError("upsert", 400, canonical_status="FAILED_PRECONDITION")
+
+    store.upsert_document = rejected
+
+    async def run():
+        async with api(adapter) as client:
+            for suffix, body in (("timer", {"action": "start"}), ("complete", {"completed": True})):
+                result = await client.post("/api/tasks/test/" + suffix, json=body)
+                assert result.status_code == 409 and result.json()["error"]["code"] == "task_conflict"
+        assert not store.writes
+    asyncio.run(run())
+
+
 @pytest.mark.parametrize("paused", [False, True])
 def test_normal_completion_finalizes_running_or_paused_timer(setup, paused):
     adapter, store, clock = setup

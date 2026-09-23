@@ -17,6 +17,12 @@ _UPDATE_TIME = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]"
     r"(?:\.([0-9]{1,9}))?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])"
 )
+_ERROR_STATUSES = frozenset({
+    "CANCELLED", "UNKNOWN", "INVALID_ARGUMENT", "DEADLINE_EXCEEDED", "NOT_FOUND",
+    "ALREADY_EXISTS", "PERMISSION_DENIED", "UNAUTHENTICATED", "RESOURCE_EXHAUSTED",
+    "FAILED_PRECONDITION", "ABORTED", "OUT_OF_RANGE", "UNIMPLEMENTED", "INTERNAL",
+    "UNAVAILABLE", "DATA_LOSS",
+})
 
 
 def _validate_update_time(value: Any) -> str:
@@ -40,9 +46,19 @@ def _validate_update_time(value: Any) -> str:
 class FirestoreError(Exception):
     """A Firestore operation failure without request credentials or payloads."""
 
-    def __init__(self, operation: str, status_code: int | None = None):
+    def __init__(
+        self, operation: str, status_code: int | None = None, *,
+        canonical_status: str | None = None,
+    ):
         self.operation = operation
         self.status_code = status_code
+        # HTTP 400 can mean INVALID_ARGUMENT or FAILED_PRECONDITION. Keep only
+        # the public enum so callers can distinguish conflicts without retaining
+        # response messages/details that may contain private document data.
+        self.canonical_status = (
+            canonical_status if isinstance(canonical_status, str)
+            and canonical_status in _ERROR_STATUSES else None
+        )
         suffix = "network_error" if status_code is None else f"http_{status_code}"
         super().__init__(f"Firestore {operation} failed: {suffix}")
 
@@ -212,7 +228,16 @@ class FirestoreClient:
         except httpx.RequestError:
             raise FirestoreError(operation) from None
         if not response.is_success:
-            raise FirestoreError(operation, response.status_code)
+            canonical_status = None
+            try:
+                error = response.json().get("error")
+                if isinstance(error, dict):
+                    canonical_status = error.get("status")
+            except (AttributeError, TypeError, ValueError):
+                pass
+            raise FirestoreError(
+                operation, response.status_code, canonical_status=canonical_status,
+            )
         return response
 
     def _document_url(self, path: str) -> str:

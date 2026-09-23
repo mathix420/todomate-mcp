@@ -84,6 +84,7 @@ HTTP mode serves these routes on the same port as `/mcp`. Each request requires 
 | `GET /api/tasks?unscheduled=true` | Undated tasks only; cannot be combined with `day` or `include_unscheduled=true`. |
 | `GET /api/tasks/{id}` | One task, returned as `{"task": {...}}`. URL-encode the original task ID. |
 | `POST /api/tasks/{id}/complete` | Set completion with JSON `{"completed": true}` or `{"completed": false}`; returns `{"task": {...}}`. |
+| `POST /api/tasks/{id}/timer` | Native timer action with JSON `{"action": "start"}`, `"pause"`, or `"stop"`; returns `{"task": {...}}`. Start also resumes; **Stop saves elapsed time and completes the task**. |
 
 The task-list response is:
 
@@ -97,7 +98,9 @@ The task-list response is:
     "memoPublic": false,
     "date": "2026-09-18",
     "dueAt": "2026-09-18T07:30:00Z",
-    "completed": false
+    "completed": false,
+    "timer": {"startedAt": "2026-09-18T08:00:00Z", "elapsedSeconds": 120},
+    "spentTimeSeconds": null
   }],
   "goals": [{
     "id": "original-goal-id",
@@ -115,7 +118,11 @@ The task-list response is:
 
 Completion reads the current task before writing. Repeating an already-applied completion returns success without changing its completion timestamp again. After a lost response, retry the same desired state; the read confirms whether the first write persisted. The API never treats an unconfirmed upstream result as success.
 
-Errors use `{"error":{"code":"...","message":"..."}}`: invalid inputs return `400`, missing or invalid bearer tokens `401`, missing or unowned tasks `404`, oversized bodies `413`, non-JSON writes `415`, upstream failures `502`, and disconnected or expired TodoMate credentials `503`. API responses use `Cache-Control: no-store`. `/healthz` remains public and does not expose account or task data.
+`timer` is `null` when disabled. Otherwise, `elapsedSeconds` is the accumulated whole seconds from previous intervals; while `startedAt` is non-null, add the seconds since that UTC instant. A paused timer has `startedAt: null`, so its elapsed time stays fixed. `spentTimeSeconds` is the saved total from the last stop, or `null`. Stop caps saved time at 20 hours, matching TodoMate. Completing a task with its checkbox also stops and saves its timer. Reopening preserves saved time; starting it again includes that time. Start on a completed task and Pause/Stop without a timer return `409`. Repeating Start while running, Pause while paused, or Stop after completion is a no-op.
+
+Timer and completion writes use the document's update-time precondition. If another client edits it after the read, the API returns `409` without overwriting the newer change. Refresh before deciding to retry. This guards one task at a time; it does not enforce a single running timer across different tasks. MCP clients can use `set_todo_timer(todo_id, action)` with the same semantics; MCP task fields use `timer.started_at`, `timer.elapsed_seconds`, and `spent_time_seconds`.
+
+Errors use `{"error":{"code":"...","message":"..."}}`: invalid inputs return `400`, missing or invalid bearer tokens `401`, missing or unowned tasks `404`, conflicting task state `409`, oversized bodies `413`, non-JSON writes `415`, upstream failures `502`, and disconnected or expired TodoMate credentials `503`. API responses use `Cache-Control: no-store`. `/healthz` remains public and does not expose account or task data.
 
 ## Deployment
 
